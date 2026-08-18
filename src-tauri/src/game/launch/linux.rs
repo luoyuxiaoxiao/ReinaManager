@@ -59,15 +59,15 @@ async fn launch_game_inner<R: Runtime>(
     let systemd_unit_name = format!("reina_game_{}.scope", game_id);
     let _ = check_scope_or_reset_failed(&systemd_unit_name).await;
 
-    let mut command = {
-        // proton-autogen 集成。proton_profile 语义:
-        //   None      = 不使用 proton-autogen,走 settings 里的 Linux 启动命令
-        //   "auto"    = 裸 proton-autogen <exe> —— 一切由 proton-autogen 的
-        //               游戏级配置(games/*.json)决定:prefix、Proton 版本、env。
-        //               与 proton-autogen 自己生成的 .desktop 行为完全一致
-        //   其他值    = proton-autogen --profile <name>,显式环境预设覆盖
-        //               (会强制覆盖游戏的 exe_type,仅在需要时使用)
-        let linux_launch_command = match game.proton_profile.as_deref() {
+    // 构造 systemd-run 启动命令。proton_profile 语义:
+    //   None      = 不使用 proton-autogen,走 settings 里的 Linux 启动命令(也是回退目标)
+    //   "auto"    = 裸 proton-autogen <exe> —— 一切由 proton-autogen 的
+    //               游戏级配置(games/*.json)决定:prefix、Proton 版本、env。
+    //               与 proton-autogen 自己生成的 .desktop 行为完全一致
+    //   其他值    = proton-autogen --profile <name>,显式环境预设覆盖
+    //               (会强制覆盖游戏的 exe_type,仅在需要时使用)
+    let build_command = |profile: Option<&str>| -> Command {
+        let linux_launch_command = match profile {
             Some("auto") => "proton-autogen".to_string(),
             Some(profile) => format!("proton-autogen --profile {profile}"),
             None => app_handle
@@ -100,6 +100,8 @@ async fn launch_game_inner<R: Runtime>(
         cmd
     };
 
+    let mut command = build_command(game.proton_profile.as_deref());
+
     let args_clone = args.clone();
     if let Some(arguments) = &args_clone {
         command.args(arguments);
@@ -119,7 +121,67 @@ async fn launch_game_inner<R: Runtime>(
     );
 
     match command.spawn() {
-        Ok(child) => {
+        Ok(mut child) => {
+            // proton 快速失败回退:启动后短时间内非零退出(游戏配置缺失、
+            // Proton 运行时不可用等)则改用 settings 里的 Linux 启动命令重试。
+            // ponytail: 8s 窗口内活着就认为启动成功;首次运行下载 GE-Proton
+            // 属于"活着",不会误触;8s 后才崩的游戏属游戏自身问题,不回退
+            let mut need_fallback = false;
+            if game.proton_profile.is_some() && exe_name.to_string_lossy().ends_with(".exe") {
+                let deadline =
+                    tokio::time::Instant::now() + std::time::Duration::from_secs(8);
+                loop {
+                    match child.try_wait() {
+                        Ok(Some(status)) => {
+                            need_fallback = !status.success();
+                            break;
+                        }
+                        Ok(None) if tokio::time::Instant::now() < deadline => {
+                            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                        }
+                        Ok(None) | Err(_) => break,
+                    }
+                }
+            }
+
+            if need_fallback {
+                info!(
+                    "proton-autogen 快速失败 game_id={}，回退 Linux 启动命令",
+                    game_id
+                );
+                let _ = check_scope_or_reset_failed(&systemd_unit_name).await;
+                let mut fallback = build_command(None);
+                if let Some(arguments) = &args_clone {
+                    fallback.args(arguments);
+                }
+                let child = fallback.spawn().map_err(|e| {
+                    format!("proton 启动失败且回退也失败: {e}，目录: {game_dir:?}")
+                })?;
+                let process_id = child.id();
+                info!(
+                    "回退启动成功 game_id={} pid={} scope={}",
+                    game_id, process_id, systemd_unit_name
+                );
+
+                monitor_game(
+                    app_handle.clone(),
+                    db.inner().clone(),
+                    time_tracking_mode,
+                    game_id,
+                    process_id,
+                    systemd_unit_name.clone(),
+                )
+                .await;
+
+                return Ok(LaunchResult::tracking(
+                    format!(
+                        "proton-autogen 启动失败，已回退 Linux 启动命令启动: {}",
+                        exe_name.to_string_lossy()
+                    ),
+                    Some(process_id),
+                ));
+            }
+
             let process_id = child.id();
             info!(
                 "游戏启动成功 game_id={} pid={} scope={}",
@@ -160,26 +222,93 @@ pub async fn stop_game(game_id: u32) -> Result<StopResult, String> {
     }
 }
 
-/// 列出 proton-autogen 的可用 profile（~/.config/proton-autogen/profiles/*.json 的文件名）
+/// 检测 proton-autogen 是否已安装在 PATH 上
 #[command]
-pub fn list_proton_profiles<R: Runtime>(app_handle: AppHandle<R>) -> Result<Vec<String>, String> {
-    let profiles_dir = app_handle
+pub fn check_proton_autogen() -> bool {
+    Command::new("sh")
+        .args(["-c", "command -v proton-autogen"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// 下载并安装 proton-autogen（系统级）。
+/// 源：用户 fork 的 main 分支 tarball；授权经 pkexec（系统弹窗，可取消）。
+/// 取消/失败时返回手动安装命令。
+#[command]
+pub async fn install_proton_autogen<R: Runtime>(
+    app_handle: AppHandle<R>,
+) -> Result<(), String> {
+    const URL: &str =
+        "https://codeload.github.com/luoyuxiaoxiao/proton-autogen/tar.gz/refs/heads/main";
+
+    let src_dir = app_handle
         .path()
-        .home_dir()
-        .map_err(|e| format!("无法获取用户主目录: {e}"))?
-        .join(".config/proton-autogen/profiles");
-    let entries = std::fs::read_dir(&profiles_dir)
-        .map_err(|e| format!("无法读取 proton-autogen profiles 目录: {e}"))?;
-    let mut profiles: Vec<String> = entries
-        .flatten()
-        .filter_map(|e| {
-            let path = e.path();
-            let name = path.file_stem()?.to_string_lossy().to_string();
-            (path.extension()?.to_string_lossy() == "json").then_some(name)
-        })
-        .collect();
-    profiles.sort();
-    Ok(profiles)
+        .app_cache_dir()
+        .map_err(|e| format!("无法获取缓存目录: {e}"))?
+        .join("proton-autogen-src");
+    std::fs::create_dir_all(&src_dir).map_err(|e| format!("无法创建缓存目录: {e}"))?;
+
+    let bytes = crate::utils::http::get_client()
+        .get(URL)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| format!("下载 proton-autogen 失败: {e}"))?
+        .bytes()
+        .await
+        .map_err(|e| format!("下载 proton-autogen 失败: {e}"))?;
+    std::fs::write(src_dir.join("pa.tar.gz"), &bytes)
+        .map_err(|e| format!("写入临时文件失败: {e}"))?;
+
+    // GitHub tarball 有一层 <user>-<repo>-<sha>/ 顶层目录，strip 掉
+    let extract = Command::new("tar")
+        .arg("-xzf")
+        .arg(src_dir.join("pa.tar.gz"))
+        .arg("--strip-components=1")
+        .arg("-C")
+        .arg(&src_dir)
+        .output()
+        .map_err(|e| format!("解压失败: {e}"))?;
+    if !extract.status.success() {
+        return Err(format!(
+            "解压失败: {}",
+            String::from_utf8_lossy(&extract.stderr)
+        ));
+    }
+
+    let manual = format!("sudo bash {}/install.sh", src_dir.display());
+    let mut child = Command::new("pkexec")
+        .arg("bash")
+        .arg(src_dir.join("install.sh"))
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("无法启动授权窗口: {e}\n可手动安装: {manual}"))?;
+
+    // 轮询等待而非阻塞 wait；600s 超时兜底（无 polkit agent 时 pkexec 会一直挂着）
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(600);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return if status.success() {
+                    Ok(())
+                } else {
+                    Err(format!("安装未完成（取消了授权）。\n可手动安装: {manual}"))
+                };
+            }
+            Ok(None) => {
+                if tokio::time::Instant::now() > deadline {
+                    let _ = child.kill();
+                    return Err(format!("安装超时。\n可手动安装: {manual}"));
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            }
+            Err(e) => return Err(format!("等待安装进程失败: {e}\n可手动安装: {manual}")),
+        }
+    }
 }
 
 fn expand_path<R: Runtime>(app_handle: &AppHandle<R>, path: &str) -> String {

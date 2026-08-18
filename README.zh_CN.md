@@ -56,6 +56,10 @@
 - 🚀 **系统集成** - 开机自启动和最小化到系统托盘
 - 🛠️ **工具集成** - 启动游戏可联动 Locale Emulator 转区和 Magpie 放大
 
+## Linux：Proton 集成（本 fork）
+
+在 Linux 上集成 [proton-autogen](https://github.com/N3oRay/proton-autogen)（MIT 协议，作者 N3oRay），感谢 N3oRay。
+
 ## 待办事项
 
 - [x] 从文件夹批量导入游戏

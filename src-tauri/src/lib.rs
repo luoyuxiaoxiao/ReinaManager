@@ -17,7 +17,7 @@ use game::cover::{delete_cloud_cache, register_game_cover_protocol};
 use game::drop_import::resolve_bulk_import_paths;
 use game::launch::{launch_game, stop_game};
 #[cfg(target_os = "linux")]
-use game::launch::list_proton_profiles;
+use game::launch::{check_proton_autogen, install_proton_autogen};
 use game::scan::scan_directory_for_games;
 use game::steam::{resolve_steam_shortcut_file, scan_steam_launch_targets};
 use install::protocol::{
@@ -108,7 +108,9 @@ pub fn run() {
             launch_game,
             stop_game,
             #[cfg(target_os = "linux")]
-            list_proton_profiles,
+            check_proton_autogen,
+            #[cfg(target_os = "linux")]
+            install_proton_autogen,
             open_directory,
             resolve_dropped_local_path,
             resolve_bulk_import_paths,
