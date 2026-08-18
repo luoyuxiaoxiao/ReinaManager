@@ -46,7 +46,7 @@ jobs:
 
           pkgver() {
             cd ReinaManager
-            git describe --long --tags | sed 's/^v//;s/\([^-]*-\)g/r\1/;s/-/./g'
+            git describe --long --tags --match 'v[0-9]*' | sed 's/^v//;s/\([^-]*-\)g/r\1/;s/-/./g'
           }
 
           build() {
@@ -97,7 +97,8 @@ jobs:
         run: |
           # src/ReinaManager 属主是 builder,root 下跑 git 需要 safe.directory
           git config --global --add safe.directory '*'
-          VER=$(git -C src/ReinaManager describe --abbrev=0 --tags | sed 's/^v//')
+          # --match 排除本 workflow 自建的滚动 tag(v*-arch),否则 describe 会捡到它导致 v0.28.2-arch-arch 套娃
+          VER=$(git -C src/ReinaManager describe --abbrev=0 --tags --match 'v[0-9]*' | sed 's/^v//')
           SHA=$(git -C src/ReinaManager rev-parse HEAD)
           # 滚动 Release:同名 tag 重建,资产按上游格式 ReinaManager_<ver>_<arch>.<ext> 命名
           gh release delete "v$VER-arch" --yes --cleanup-tag 2>/dev/null || true
