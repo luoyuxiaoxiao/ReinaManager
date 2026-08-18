@@ -56,6 +56,10 @@ The `Reina` in the name is the character <a href="https://vndb.org/c64303"><b>�
 - 🚀 **System Integration** - Auto-start on boot and minimize to system tray
 - 🛠️ **Tool Integration** - Launch games with Locale Emulator locale switching and Magpie upscaling integration
 
+## Linux: Proton Integration (fork)
+
+Integrates [proton-autogen](https://github.com/N3oRay/proton-autogen) (MIT, by N3oRay) on Linux. Thanks, N3oRay.
+
 ## Todo
 
 - [x] Bulk import games from folders

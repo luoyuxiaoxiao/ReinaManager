@@ -33,6 +33,7 @@ import BrightnessAutoIcon from "@mui/icons-material/BrightnessAuto";
 import CloseIcon from "@mui/icons-material/Close";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import DeleteIcon from "@mui/icons-material/Delete";
+import DownloadIcon from "@mui/icons-material/Download";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import LightModeIcon from "@mui/icons-material/LightMode";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
@@ -428,24 +429,44 @@ const MoreButton = ({ selectedGame }: { selectedGame: GameData }) => {
 	};
 
 	// === proton-autogen 集成（仅 Linux） ===
-	const [protonProfiles, setProtonProfiles] = useState<string[]>([]);
-	const [protonMenuOpen, setProtonMenuOpen] = useState(false);
+	const [protonInstalled, setProtonInstalled] = useState(true);
+	const [protonInstallOpen, setProtonInstallOpen] = useState(false);
+	const [protonInstalling, setProtonInstalling] = useState(false);
+	const [protonInstallMessage, setProtonInstallMessage] = useState<
+		string | null
+	>(null);
 	const isLinux = import.meta.env.TAURI_ENV_PLATFORM === "linux";
 
 	// TAURI_ENV_PLATFORM 是构建期常量，无需作为依赖
 	// biome-ignore lint/correctness/useExhaustiveDependencies: 构建期常量
 	useEffect(() => {
 		if (!isTauri() || !isLinux) return;
-		invoke<string[]>("list_proton_profiles")
-			.then(setProtonProfiles)
-			.catch((error) => console.debug("proton-autogen 不可用:", error));
+		invoke<boolean>("check_proton_autogen")
+			.then(setProtonInstalled)
+			.catch(() => setProtonInstalled(false));
 	}, [isLinux]);
 
-	const handleSelectProtonProfile = async (profile: string | null) => {
+	const handleInstallProton = async () => {
+		setProtonInstalling(true);
+		try {
+			await invoke("install_proton_autogen");
+			setProtonInstalled(true);
+			setProtonInstallOpen(false);
+		} catch (error) {
+			// 取消授权/失败：在弹窗里展示手动安装命令，可重试或关闭
+			setProtonInstallMessage(String(error));
+		} finally {
+			setProtonInstalling(false);
+		}
+	};
+
+	const handleToggleProton = async () => {
+		const nextEnabled = !selectedGame.proton_profile;
+
 		try {
 			await updateGameMutation.mutateAsync({
 				gameId,
-				updates: { proton_profile: profile },
+				updates: { proton_profile: nextEnabled ? "auto" : null },
 			});
 		} catch (error) {
 			console.error("更新Proton启动配置失败:", error);
@@ -506,46 +527,35 @@ const MoreButton = ({ selectedGame }: { selectedGame: GameData }) => {
 					<Switch checked={selectedGame.magpie === 1} size="small" />
 				</MenuItem>
 
-				{isLinux && protonProfiles.length > 0 && (
-					<>
-						<MenuItem onClick={() => setProtonMenuOpen(!protonMenuOpen)}>
-							<ListItemIcon>
-								<VideogameAssetIcon fontSize="small" />
-							</ListItemIcon>
-							<ListItemText>
-								{t("components.Toolbar.protonLaunch", "Proton 启动")}
-							</ListItemText>
-							{selectedGame.proton_profile ?? t("common.off", "关闭")}
-						</MenuItem>
-						{protonMenuOpen && (
-							<>
-								<MenuItem
-									selected={!selectedGame.proton_profile}
-									onClick={() => void handleSelectProtonProfile(null)}
-									sx={{ pl: 4 }}
-								>
-									{t("components.Toolbar.protonOff", "不使用 Proton")}
-								</MenuItem>
-								<MenuItem
-									selected={selectedGame.proton_profile === "auto"}
-									onClick={() => void handleSelectProtonProfile("auto")}
-									sx={{ pl: 4 }}
-								>
-									{t("components.Toolbar.protonAuto", "跟随游戏配置 (推荐)")}
-								</MenuItem>
-								{protonProfiles.map((profile) => (
-									<MenuItem
-										key={profile}
-										selected={selectedGame.proton_profile === profile}
-										onClick={() => void handleSelectProtonProfile(profile)}
-										sx={{ pl: 4 }}
-									>
-										{profile}
-									</MenuItem>
-								))}
-							</>
-						)}
-					</>
+				{isLinux && !protonInstalled && (
+					<MenuItem
+						onClick={() => {
+							setProtonInstallMessage(null);
+							setProtonInstallOpen(true);
+							handleClose();
+						}}
+					>
+						<ListItemIcon>
+							<DownloadIcon fontSize="small" />
+						</ListItemIcon>
+						<ListItemText>
+							{t("components.Toolbar.protonInstall", "安装 Proton 运行环境")}
+						</ListItemText>
+					</MenuItem>
+				)}
+				{isLinux && protonInstalled && (
+					<MenuItem onClick={() => void handleToggleProton()}>
+						<ListItemIcon>
+							<VideogameAssetIcon fontSize="small" />
+						</ListItemIcon>
+						<ListItemText>
+							{t("components.Toolbar.protonLaunch", "Proton 启动")}
+						</ListItemText>
+						<Switch
+							checked={Boolean(selectedGame.proton_profile)}
+							size="small"
+						/>
+					</MenuItem>
 				)}
 
 				{/* 游戏状态切换 - 二级菜单 */}
@@ -562,6 +572,24 @@ const MoreButton = ({ selectedGame }: { selectedGame: GameData }) => {
 				open={pathSettingsModalOpen}
 				onClose={() => setPathSettingsModalOpen(false)}
 				inSettingsPage={false}
+			/>
+
+			{/* proton-autogen 安装弹窗（仅 Linux，未安装时出现菜单入口） */}
+			<AlertConfirmBox
+				open={protonInstallOpen}
+				setOpen={(value) => setProtonInstallOpen(value)}
+				onConfirm={() => void handleInstallProton()}
+				isLoading={protonInstalling}
+				title={t("components.Toolbar.protonInstallTitle", "安装 Proton 运行环境")}
+				message={
+					protonInstallMessage ??
+					t(
+						"components.Toolbar.protonInstallDesc",
+						"将下载 proton-autogen 并安装到系统，过程中会弹出系统授权窗口。也可取消后手动安装。",
+					)
+				}
+				confirmText={t("components.Toolbar.protonInstallButton", "下载并安装")}
+				confirmColor="primary"
 			/>
 		</>
 	);
