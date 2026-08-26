@@ -80,6 +80,8 @@ export const PathSettingsModal: React.FC<PathSettingsModalProps> = ({
 	inSettingsPage = true,
 }) => {
 	const { t } = useTranslation();
+	// Linux 下隐藏 Magpie/LE 等 Windows 专属功能（构建期常量）
+	const isLinux = import.meta.env.TAURI_ENV_PLATFORM === "linux";
 	const [draft, setDraft] = useState<PathSettingsDraft>(EMPTY_DRAFT);
 	const [initialDraft, setInitialDraft] =
 		useState<PathSettingsDraft>(EMPTY_DRAFT);
@@ -475,124 +477,131 @@ export const PathSettingsModal: React.FC<PathSettingsModalProps> = ({
 						</>
 					)}
 
-					{/* LE转区软件路径设置 */}
-					<Box>
-						<InputLabel className="font-semibold mb-4">
-							{t("components.PathSettingsModal.lePath.title", "LE转区软件路径")}
-						</InputLabel>
-						<Typography
-							variant="caption"
-							color="text.secondary"
-							className="block mb-3"
-						>
-							{t(
-								"components.PathSettingsModal.lePath.note",
-								"设置LE转区软件的可执行文件路径，用于游戏启动时的转区功能",
-							)}
-						</Typography>
-						<TextField
-							label={t(
-								"components.PathSettingsModal.lePath.pathLabel",
-								"LE转区软件路径",
-							)}
-							variant="outlined"
-							value={draft.lePath}
-							onChange={(e) => updateDraft("lePath", e.target.value)}
-							onBlur={() => void saveDraft(draft)}
-							onKeyDown={(event) => handlePathKeyDown(event, "lePath")}
-							fullWidth
-							className="mb-2"
-							placeholder={t(
-								"components.PathSettingsModal.lePath.pathPlaceholder",
-								"选择LE转区软件的可执行文件",
-							)}
-							disabled={isLoading}
-							size="small"
-							InputProps={{
-								endAdornment: (
-									<InputAdornment position="end">
-										<Tooltip
-											title={t(
-												"components.PathSettingsModal.lePath.selectBtn",
-												"选择文件",
-											)}
-										>
-											<IconButton
-												onMouseDown={(event) => event.preventDefault()}
-												onClick={() => handleSelectExeFile("lePath")}
-												disabled={isLoading}
-												edge="end"
-												size="small"
+					{!isLinux && (
+						// LE转区软件路径设置（Windows 专属，Linux 隐藏）
+						<Box>
+							<InputLabel className="font-semibold mb-4">
+								{t(
+									"components.PathSettingsModal.lePath.title",
+									"LE转区软件路径",
+								)}
+							</InputLabel>
+							<Typography
+								variant="caption"
+								color="text.secondary"
+								className="block mb-3"
+							>
+								{t(
+									"components.PathSettingsModal.lePath.note",
+									"设置LE转区软件的可执行文件路径，用于游戏启动时的转区功能",
+								)}
+							</Typography>
+							<TextField
+								label={t(
+									"components.PathSettingsModal.lePath.pathLabel",
+									"LE转区软件路径",
+								)}
+								variant="outlined"
+								value={draft.lePath}
+								onChange={(e) => updateDraft("lePath", e.target.value)}
+								onBlur={() => void saveDraft(draft)}
+								onKeyDown={(event) => handlePathKeyDown(event, "lePath")}
+								fullWidth
+								className="mb-2"
+								placeholder={t(
+									"components.PathSettingsModal.lePath.pathPlaceholder",
+									"选择LE转区软件的可执行文件",
+								)}
+								disabled={isLoading}
+								size="small"
+								InputProps={{
+									endAdornment: (
+										<InputAdornment position="end">
+											<Tooltip
+												title={t(
+													"components.PathSettingsModal.lePath.selectBtn",
+													"选择文件",
+												)}
 											>
-												<FileOpenIcon fontSize="small" />
-											</IconButton>
-										</Tooltip>
-									</InputAdornment>
-								),
-							}}
-						/>
-					</Box>
+												<IconButton
+													onMouseDown={(event) => event.preventDefault()}
+													onClick={() => handleSelectExeFile("lePath")}
+													disabled={isLoading}
+													edge="end"
+													size="small"
+												>
+													<FileOpenIcon fontSize="small" />
+												</IconButton>
+											</Tooltip>
+										</InputAdornment>
+									),
+								}}
+							/>
+						</Box>
+					)}
 
-					{/* Magpie软件路径设置 */}
-					<Box>
-						<InputLabel className="font-semibold mb-4">
-							{t(
-								"components.PathSettingsModal.magpiePath.title",
-								"Magpie软件路径",
-							)}
-						</InputLabel>
-						<Typography
-							variant="caption"
-							color="text.secondary"
-							className="block mb-3"
-						>
-							{t(
-								"components.PathSettingsModal.magpiePath.note",
-								"设置Magpie软件的可执行文件路径，用于游戏画面的放大功能",
-							)}
-						</Typography>
-						<TextField
-							label={t(
-								"components.PathSettingsModal.magpiePath.pathLabel",
-								"Magpie软件路径",
-							)}
-							variant="outlined"
-							value={draft.magpiePath}
-							onChange={(e) => updateDraft("magpiePath", e.target.value)}
-							onBlur={() => void saveDraft(draft)}
-							onKeyDown={(event) => handlePathKeyDown(event, "magpiePath")}
-							fullWidth
-							className="mb-2"
-							placeholder={t(
-								"components.PathSettingsModal.magpiePath.pathPlaceholder",
-								"选择Magpie软件的可执行文件",
-							)}
-							disabled={isLoading}
-							size="small"
-							InputProps={{
-								endAdornment: (
-									<InputAdornment position="end">
-										<Tooltip
-											title={t(
-												"components.PathSettingsModal.magpiePath.selectBtn",
-												"选择文件",
-											)}
-										>
-											<IconButton
-												onMouseDown={(event) => event.preventDefault()}
-												onClick={() => handleSelectExeFile("magpiePath")}
-												disabled={isLoading}
-												edge="end"
-												size="small"
+					{!isLinux && (
+						// Magpie软件路径设置（Windows 专属，Linux 隐藏）
+						<Box>
+							<InputLabel className="font-semibold mb-4">
+								{t(
+									"components.PathSettingsModal.magpiePath.title",
+									"Magpie软件路径",
+								)}
+							</InputLabel>
+							<Typography
+								variant="caption"
+								color="text.secondary"
+								className="block mb-3"
+							>
+								{t(
+									"components.PathSettingsModal.magpiePath.note",
+									"设置Magpie软件的可执行文件路径，用于游戏画面的放大功能",
+								)}
+							</Typography>
+							<TextField
+								label={t(
+									"components.PathSettingsModal.magpiePath.pathLabel",
+									"Magpie软件路径",
+								)}
+								variant="outlined"
+								value={draft.magpiePath}
+								onChange={(e) => updateDraft("magpiePath", e.target.value)}
+								onBlur={() => void saveDraft(draft)}
+								onKeyDown={(event) => handlePathKeyDown(event, "magpiePath")}
+								fullWidth
+								className="mb-2"
+								placeholder={t(
+									"components.PathSettingsModal.magpiePath.pathPlaceholder",
+									"选择Magpie软件的可执行文件",
+								)}
+								disabled={isLoading}
+								size="small"
+								InputProps={{
+									endAdornment: (
+										<InputAdornment position="end">
+											<Tooltip
+												title={t(
+													"components.PathSettingsModal.magpiePath.selectBtn",
+													"选择文件",
+												)}
 											>
-												<FileOpenIcon fontSize="small" />
-											</IconButton>
-										</Tooltip>
-									</InputAdornment>
-								),
-							}}
-						/>
-					</Box>
+												<IconButton
+													onMouseDown={(event) => event.preventDefault()}
+													onClick={() => handleSelectExeFile("magpiePath")}
+													disabled={isLoading}
+													edge="end"
+													size="small"
+												>
+													<FileOpenIcon fontSize="small" />
+												</IconButton>
+											</Tooltip>
+										</InputAdornment>
+									),
+								}}
+							/>
+						</Box>
+					)}
 				</Box>
 			</DialogContent>
 			<DialogActions>

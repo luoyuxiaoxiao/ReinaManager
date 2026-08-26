@@ -508,24 +508,28 @@ const MoreButton = ({ selectedGame }: { selectedGame: GameData }) => {
 						</ListItemText>
 					</MenuItem>
 				))}
-				<MenuItem onClick={handleToggleLeLaunch}>
-					<ListItemIcon>
-						<TurnRightIcon fontSize="small" />
-					</ListItemIcon>
-					<ListItemText>
-						{t("components.Toolbar.leLaunch", "LE转区启动")}
-					</ListItemText>
-					<Switch checked={selectedGame.le_launch === 1} size="small" />
-				</MenuItem>
-				<MenuItem onClick={handleToggleMagpie}>
-					<ListItemIcon>
-						<OpenInFullIcon fontSize="small" />
-					</ListItemIcon>
-					<ListItemText>
-						{t("components.Toolbar.magpieZoom", "Magpie放大")}
-					</ListItemText>
-					<Switch checked={selectedGame.magpie === 1} size="small" />
-				</MenuItem>
+				{!isLinux && (
+					<MenuItem onClick={handleToggleLeLaunch}>
+						<ListItemIcon>
+							<TurnRightIcon fontSize="small" />
+						</ListItemIcon>
+						<ListItemText>
+							{t("components.Toolbar.leLaunch", "LE转区启动")}
+						</ListItemText>
+						<Switch checked={selectedGame.le_launch === 1} size="small" />
+					</MenuItem>
+				)}
+				{!isLinux && (
+					<MenuItem onClick={handleToggleMagpie}>
+						<ListItemIcon>
+							<OpenInFullIcon fontSize="small" />
+						</ListItemIcon>
+						<ListItemText>
+							{t("components.Toolbar.magpieZoom", "Magpie放大")}
+						</ListItemText>
+						<Switch checked={selectedGame.magpie === 1} size="small" />
+					</MenuItem>
+				)}
 
 				{isLinux && !protonInstalled && (
 					<MenuItem
@@ -580,7 +584,10 @@ const MoreButton = ({ selectedGame }: { selectedGame: GameData }) => {
 				setOpen={(value) => setProtonInstallOpen(value)}
 				onConfirm={() => void handleInstallProton()}
 				isLoading={protonInstalling}
-				title={t("components.Toolbar.protonInstallTitle", "安装 Proton 运行环境")}
+				title={t(
+					"components.Toolbar.protonInstallTitle",
+					"安装 Proton 运行环境",
+				)}
 				message={
 					protonInstallMessage ??
 					t(
