@@ -1,7 +1,7 @@
 //! 本机 Steam 启动目标扫描。
 
 use crate::database::repository::games_repository::GamesRepository;
-use crate::game::scan::ImportPathIndex;
+use crate::game::scan::{ImportPathIndex, resolve_configured_path_set};
 use sea_orm::DatabaseConnection;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashSet};
@@ -710,7 +710,9 @@ pub async fn scan_steam_launch_targets(
             .await
             .map_err(|error| format!("查询已有 Steam 启动 ID 失败: {error}"))?;
         SteamImportFilter {
-            paths: ImportPathIndex::from_paths(existing_game_directories),
+            paths: ImportPathIndex::from_paths(resolve_configured_path_set(
+                existing_game_directories,
+            )),
             launch_ids: existing_steam_launch_ids,
         }
     } else {
@@ -726,7 +728,9 @@ pub async fn scan_steam_launch_targets(
 
 #[command]
 pub async fn resolve_steam_shortcut_file(path: String) -> Result<SteamLaunchTarget, String> {
-    tokio::task::spawn_blocking(move || resolve_steam_shortcut_file_blocking(Path::new(&path)))
+    let path = reina_path::resolve_user_path(&path)
+        .map_err(|error| format!("Steam 快捷方式路径解析失败: {error}"))?;
+    tokio::task::spawn_blocking(move || resolve_steam_shortcut_file_blocking(&path))
         .await
         .map_err(|error| format!("Steam 快捷方式解析任务异常: {error}"))?
 }

@@ -14,11 +14,19 @@ export interface BackupInfo {
 	backup_path: string;
 }
 
+/** 恢复存档的结果。路径可能是当前路径，也可能是按备份原名恢复的并存路径。 */
+export interface RestoreBackupResult {
+	restored_path: string;
+	replaced_existing: boolean;
+	restored_to_alternate: boolean;
+	cleanup_warning: string | null;
+}
+
 class SavedataService extends BaseService {
 	/**
 	 * 创建存档备份
 	 * @param gameId 游戏ID
-	 * @param sourcePath 存档文件夹路径
+	 * @param sourcePath 存档文件或文件夹路径
 	 */
 	async createBackup(gameId: number, sourcePath: string): Promise<BackupInfo> {
 		return this.invoke<BackupInfo>("create_savedata_backup", {
@@ -37,34 +45,26 @@ class SavedataService extends BaseService {
 
 	/**
 	 * 恢复存档备份
-	 * @param backupFilePath 备份文件完整路径
+	 * @param backupId 备份记录 ID
 	 * @param targetPath 目标恢复路径
 	 */
 	async restoreBackup(
-		backupFilePath: string,
+		backupId: number,
 		targetPath: string,
-	): Promise<void> {
-		return this.invoke<void>("restore_savedata_backup", {
-			backupFilePath,
+	): Promise<RestoreBackupResult> {
+		return this.invoke<RestoreBackupResult>("restore_savedata_backup", {
+			backupId,
 			targetPath,
 		});
 	}
 
-	/**
-	 * 保存存档备份记录
-	 */
-	async saveSavedataRecord(
-		gameId: number,
-		fileName: string,
-		backupTime: number,
-		fileSize: number,
-	): Promise<number> {
-		return this.invoke<number>("save_savedata_record", {
-			gameId,
-			fileName,
-			backupTime,
-			fileSize,
-		});
+	async openBackupFolder(gameId: number): Promise<void> {
+		return this.invoke<void>("open_savedata_backup_folder", { gameId });
+	}
+
+	/** 打开存档位置；文件打开其父目录，目录打开自身。 */
+	async openLocation(savePath: string): Promise<void> {
+		return this.invoke<void>("open_savedata_location", { savePath });
 	}
 
 	/**

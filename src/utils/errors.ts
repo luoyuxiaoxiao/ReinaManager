@@ -329,6 +329,25 @@ export function getUserErrorMessage(
 					getAppErrorDetailMessage(error) ||
 					t("errors.invokeFailed", "应用内部调用失败，请稍后重试")
 				);
+			case "path_empty":
+				return t("errors.pathEmpty", "路径不能为空");
+			case "path_variable_syntax":
+				return t("errors.pathVariableSyntax", "路径变量语法无效");
+			case "path_variable_undefined":
+				return t("errors.pathVariableUndefined", "路径使用了未定义的环境变量");
+			case "path_variable_non_unicode":
+				return t("errors.pathVariableNonUnicode", "环境变量不是有效文本");
+			case "path_variable_cycle":
+				return t("errors.pathVariableCycle", "环境变量存在循环引用");
+			case "path_variable_depth_exceeded":
+				return t("errors.pathVariableDepth", "环境变量递归展开层数过多");
+			case "path_not_absolute":
+				return t("errors.pathNotAbsolute", "路径解析结果必须是绝对路径");
+			case "path_inspection_failed":
+				return (
+					getAppErrorDetailMessage(error) ||
+					t("errors.pathInspectionFailed", "无法读取路径状态")
+				);
 		}
 
 		const detailMessage = getAppErrorDetailMessage(error);

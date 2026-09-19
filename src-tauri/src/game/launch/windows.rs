@@ -1,14 +1,12 @@
 use super::{
     LaunchResult, StopResult, load_game, magpie, validate_and_open_steam, validate_local_launch,
 };
-use crate::database::dto::UpdateSettingsData;
-use crate::database::repository::settings_repository::{DbSettingsExt, SettingsRepository};
+use crate::database::repository::settings_repository::DbSettingsExt;
 use crate::game::monitor::{
     TimeTrackingMode, is_game_foreground, monitor_game, stop_game_session, wait_for_game_foreground,
 };
 use crate::utils::command_ext::CommandGuiExt;
 use sea_orm::DatabaseConnection;
-use std::path::Path;
 use std::process::Command;
 use tauri::{AppHandle, Runtime, State, command};
 use {
@@ -27,19 +25,6 @@ impl ToolPathKind {
         match self {
             Self::Le => "LE转区软件",
             Self::Magpie => "Magpie软件",
-        }
-    }
-
-    fn clear_update(self) -> UpdateSettingsData {
-        match self {
-            Self::Le => UpdateSettingsData {
-                le_path: Some(None),
-                ..Default::default()
-            },
-            Self::Magpie => UpdateSettingsData {
-                magpie_path: Some(None),
-                ..Default::default()
-            },
         }
     }
 }
@@ -121,25 +106,13 @@ mod win_elevated_launch {
     }
 }
 
-async fn clear_tool_path_setting(
-    db: &DatabaseConnection,
-    tool_kind: ToolPathKind,
-) -> Result<(), String> {
-    SettingsRepository::update_settings(db, tool_kind.clear_update())
-        .await
-        .map_err(|e| format!("清空{}路径失败: {}", tool_kind.label(), e))
-}
-
-async fn resolve_tool_path(
-    db: &DatabaseConnection,
-    path: Option<&str>,
-    tool_kind: ToolPathKind,
-) -> Result<String, String> {
+fn resolve_tool_path(path: Option<&str>, tool_kind: ToolPathKind) -> Result<String, String> {
     let Some(path) = path.filter(|value| !value.trim().is_empty()) else {
         return Err(format!("{}路径未设置，请先配置路径", tool_kind.label()));
     };
 
-    let tool_path = Path::new(path);
+    let tool_path = reina_path::resolve_user_path(path)
+        .map_err(|error| format!("{}路径解析失败: {error}", tool_kind.label()))?;
     let invalid_reason = if !tool_path.exists() {
         Some("不存在")
     } else if !tool_path.is_file() {
@@ -149,16 +122,15 @@ async fn resolve_tool_path(
     };
 
     if let Some(reason) = invalid_reason {
-        clear_tool_path_setting(db, tool_kind).await?;
         return Err(format!(
-            "{}路径{}，已清空配置，请重新设置: {}",
+            "{}路径{}，请重新设置: {}",
             tool_kind.label(),
             reason,
-            path
+            tool_path.display()
         ));
     }
 
-    Ok(path.to_string())
+    Ok(tool_path.to_string_lossy().into_owned())
 }
 
 /// 启动游戏
@@ -207,22 +179,18 @@ async fn launch_game_inner<R: Runtime>(
         )?;
         let magpie_path = if game.magpie.unwrap_or(0) == 1 {
             match db.inner().get_settings().await {
-                Ok(settings) => match resolve_tool_path(
-                    db.inner(),
-                    settings.magpie_path_value(),
-                    ToolPathKind::Magpie,
-                )
-                .await
-                {
-                    Ok(path) => Some(path),
-                    Err(error) => {
-                        warn!(
-                            "Steam 已启动，但 Magpie 配置不可用 game_id={}: {}",
-                            game_id, error
-                        );
-                        None
+                Ok(settings) => {
+                    match resolve_tool_path(settings.magpie_path_value(), ToolPathKind::Magpie) {
+                        Ok(path) => Some(path),
+                        Err(error) => {
+                            warn!(
+                                "Steam 已启动，但 Magpie 配置不可用 game_id={}: {}",
+                                game_id, error
+                            );
+                            None
+                        }
                     }
-                },
+                }
                 Err(error) => {
                     warn!(
                         "Steam 已启动，但读取 Magpie 配置失败 game_id={}: {}",
@@ -273,27 +241,19 @@ async fn launch_game_inner<R: Runtime>(
         None
     };
     let le_path = if use_le {
-        Some(
-            resolve_tool_path(
-                db.inner(),
-                settings.as_ref().and_then(|s| s.le_path_value()),
-                ToolPathKind::Le,
-            )
-            .await?,
-        )
+        Some(resolve_tool_path(
+            settings.as_ref().and_then(|s| s.le_path_value()),
+            ToolPathKind::Le,
+        )?)
     } else {
         None
     };
 
     let magpie_path = if use_magpie {
-        Some(
-            resolve_tool_path(
-                db.inner(),
-                settings.as_ref().and_then(|s| s.magpie_path_value()),
-                ToolPathKind::Magpie,
-            )
-            .await?,
-        )
+        Some(resolve_tool_path(
+            settings.as_ref().and_then(|s| s.magpie_path_value()),
+            ToolPathKind::Magpie,
+        )?)
     } else {
         None
     };

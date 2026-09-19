@@ -23,13 +23,15 @@ export interface ImportResult {
 	backup_path: string | null;
 }
 
-export interface MoveBackupFolderResult {
-	success: boolean;
-	message: string;
-}
-
 export interface PortableModeResult {
 	is_portable: boolean;
+}
+
+export type UserPathKind = "file" | "directory" | "missing" | "other";
+
+export interface UserPathInspection {
+	resolved_path: string;
+	kind: UserPathKind;
 }
 
 export interface DroppedLocalPathResult {
@@ -88,6 +90,10 @@ export interface BulkImportPathResult {
 }
 
 class FileService extends BaseService {
+	/** 解析用户配置路径并读取当前文件系统状态。 */
+	async inspectUserPath(path: string): Promise<UserPathInspection> {
+		return this.invoke<UserPathInspection>("inspect_user_path", { path });
+	}
 	/** 扫描本机可用的 Steam 启动目标。 */
 	async scanSteamLaunchTargets(
 		options: SteamLaunchTargetScanOptions = {},
@@ -120,11 +126,13 @@ class FileService extends BaseService {
 		path: string,
 		maxDepth: number,
 		scanMode: GameDirectoryScanMode,
+		scanExecutables: boolean,
 	): Promise<ScanResult[]> {
 		return this.invoke<ScanResult[]>("scan_directory_for_games", {
 			path,
 			maxDepth,
 			scanMode,
+			scanExecutables,
 		});
 	}
 
@@ -197,6 +205,10 @@ class FileService extends BaseService {
 		return this.invoke<BackupResult>("backup_database", { options });
 	}
 
+	async openDatabaseBackupFolder(): Promise<void> {
+		return this.invoke<void>("open_database_backup_folder");
+	}
+
 	/**
 	 * 备份自定义封面（仅自定义封面，不含云端缓存）
 	 */
@@ -211,19 +223,6 @@ class FileService extends BaseService {
 	 */
 	async importDatabase(sourcePath: string): Promise<ImportResult> {
 		return this.invoke<ImportResult>("import_database", { sourcePath });
-	}
-
-	/**
-	 * 移动备份文件夹
-	 */
-	async moveBackupFolder(
-		oldPath: string,
-		newPath: string,
-	): Promise<MoveBackupFolderResult> {
-		return this.invoke<MoveBackupFolderResult>("move_backup_folder", {
-			oldPath,
-			newPath,
-		});
 	}
 }
 

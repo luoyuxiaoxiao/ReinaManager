@@ -60,6 +60,12 @@ pub async fn backup_database(
     Ok(result)
 }
 
+#[command]
+pub async fn open_database_backup_folder(db: State<'_, DatabaseConnection>) -> Result<(), String> {
+    let path = resolve_backup_dir(&db).await?;
+    crate::utils::fs::open_directory(path.to_string_lossy().into_owned()).await
+}
+
 pub async fn backup_database_file(db: &DatabaseConnection) -> Result<BackupResult, String> {
     // 生成备份文件名并确定目标路径
     let backup_name = generate_backup_filename();
@@ -158,7 +164,8 @@ pub async fn import_database(
     source_path: String,
     db: State<'_, DatabaseConnection>,
 ) -> Result<ImportResult, String> {
-    let src_path = Path::new(&source_path);
+    let src_path = reina_path::resolve_user_path(&source_path)
+        .map_err(|error| format!("源数据库路径解析失败: {error}"))?;
 
     // 检查源文件是否存在
     if !src_path.exists() {
@@ -173,7 +180,7 @@ pub async fn import_database(
     // 获取当前数据库路径（自动判断便携模式）
     let target_db_path = get_db_path()?;
     if let (Ok(source), Ok(target)) = (
-        fs::canonicalize(src_path),
+        fs::canonicalize(&src_path),
         fs::canonicalize(&target_db_path),
     ) && source == target
     {
@@ -207,7 +214,7 @@ pub async fn import_database(
     log::info!("导入数据库前已清空封面目录");
 
     // 步骤6：复制文件覆盖现有数据库
-    fs::copy(src_path, &target_db_path).map_err(|e| format!("复制数据库文件失败: {}", e))?;
+    fs::copy(&src_path, &target_db_path).map_err(|e| format!("复制数据库文件失败: {}", e))?;
     log::info!("数据库文件已复制: {} -> {:?}", source_path, target_db_path);
 
     // 导入成功，前端将负责重启应用以重新连接数据库

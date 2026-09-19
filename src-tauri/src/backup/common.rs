@@ -1,5 +1,4 @@
-use crate::database::dto::UpdateSettingsData;
-use crate::database::repository::settings_repository::{DbSettingsExt, SettingsRepository};
+use crate::database::repository::settings_repository::DbSettingsExt;
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -23,24 +22,17 @@ pub async fn resolve_backup_dir(db: &DatabaseConnection) -> Result<PathBuf, Stri
     let settings = db.get_settings().await?;
 
     if let Some(custom) = settings.db_backup_path_value() {
-        let custom_path = PathBuf::from(custom);
-        if custom_path.is_dir() {
-            return Ok(custom_path);
+        match reina_path::resolve_user_path(custom) {
+            Ok(custom_path) if custom_path.is_dir() => return Ok(custom_path),
+            Ok(custom_path) => log::warn!(
+                "自定义数据库备份目录不存在或不是文件夹，保留配置并回退默认目录: {}",
+                custom_path.display()
+            ),
+            Err(error) => log::warn!(
+                "自定义数据库备份目录解析失败，保留配置并回退默认目录: configured={}, error={error}",
+                custom
+            ),
         }
-
-        log::warn!(
-            "自定义数据库备份目录无效，清空设置并回退默认目录: {}",
-            custom
-        );
-        SettingsRepository::update_settings(
-            db,
-            UpdateSettingsData {
-                db_backup_path: Some(None),
-                ..Default::default()
-            },
-        )
-        .await
-        .map_err(|e| format!("清空无效数据库备份路径失败: {}", e))?;
     }
 
     let backup_dir = reina_path::get_default_db_backup_path()?;

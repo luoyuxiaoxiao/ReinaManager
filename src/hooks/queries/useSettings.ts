@@ -20,6 +20,7 @@ import { settingsService } from "@/services/invoke";
 import { withHikarinagiAuth } from "@/services/oauth/hikarinagiAuthSession";
 import { getNetworkRequestContext } from "@/services/requestContext";
 import type { LogLevel, UpdateSettingsParams } from "@/types";
+import { saveDataKeys } from "./useSavedata";
 
 // ============================================================================
 // Key Factory - 统一的 Query Key 前缀
@@ -218,6 +219,31 @@ export function useUpdateSettings() {
 			}
 
 			await Promise.all(invalidations);
+		},
+	});
+}
+
+/** 原子迁移存档备份目录并更新配置。 */
+export function useChangeSavedataBackupRoot() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: ({
+			newPath,
+			forceMissingSource = false,
+		}: {
+			newPath: string;
+			forceMissingSource?: boolean;
+		}) => settingsService.changeSavedataBackupRoot(newPath, forceMissingSource),
+		onSuccess: () => {
+			void Promise.all([
+				queryClient.invalidateQueries({
+					queryKey: settingsKeys.allSettings(),
+				}),
+				queryClient.invalidateQueries({
+					queryKey: saveDataKeys.all,
+				}),
+			]);
 		},
 	});
 }

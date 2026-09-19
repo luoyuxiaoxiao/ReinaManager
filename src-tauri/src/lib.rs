@@ -7,9 +7,10 @@ mod oauth;
 mod utils;
 
 use backup::covers::backup_custom_covers;
-use backup::database::{backup_database, import_database};
+use backup::database::{backup_database, import_database, open_database_backup_folder};
 use backup::savedata::{
-    create_savedata_backup, delete_savedata_backup, move_backup_folder, restore_savedata_backup,
+    change_savedata_backup_root, create_savedata_backup, delete_savedata_backup,
+    open_savedata_backup_folder, restore_savedata_backup,
 };
 use database::*;
 use game::cover::custom::{delete_game_covers, import_clipboard_image_to_temp};
@@ -44,7 +45,10 @@ use tauri::Manager;
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 use tauri_plugin_store::StoreExt;
 use utils::{
-    fs::{copy_file, delete_file, is_portable_mode, open_directory, resolve_dropped_local_path},
+    fs::{
+        copy_file, delete_file, inspect_user_path, is_portable_mode, open_directory,
+        open_savedata_location, resolve_dropped_local_path,
+    },
     http::{get_system_proxy_status, update_proxy_config},
     image::register_image_proxy_protocol,
     legacy_migration::run_startup_migrations,
@@ -97,7 +101,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec!["--flag1", "--flag2"]), /* arbitrary number of args to pass to your app */
+            Some(vec!["--startup"]), /* arbitrary number of args to pass to your app */
         ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
@@ -112,6 +116,8 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             install_proton_autogen,
             open_directory,
+            open_savedata_location,
+            inspect_user_path,
             resolve_dropped_local_path,
             resolve_bulk_import_paths,
             is_portable_mode,
@@ -129,16 +135,18 @@ pub fn run() {
             delete_task,
             complete_game_install_task,
             fail_game_install_metadata,
-            move_backup_folder,
+            change_savedata_backup_root,
             copy_file,
             create_savedata_backup,
             delete_savedata_backup,
+            open_savedata_backup_folder,
             restore_savedata_backup,
             delete_file,
             import_clipboard_image_to_temp,
             delete_game_covers,
             delete_cloud_cache,
             backup_database,
+            open_database_backup_folder,
             backup_custom_covers,
             import_database,
             // 游戏数据相关 commands
@@ -154,7 +162,6 @@ pub fn run() {
             get_source_bindings,
             update_games_batch,
             // 存档备份相关 commands
-            save_savedata_record,
             get_savedata_count,
             get_savedata_records,
             // 游戏统计相关 commands

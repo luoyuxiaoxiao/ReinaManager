@@ -7,7 +7,6 @@ use crate::entity::custom_data::CustomData;
 use crate::entity::user::{BgmAuth, HikarinagiAuth};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use std::path::PathBuf;
 
 /// 辅助函数：支持 Option<Option<T>> 的反序列化
 /// 用于区分"未提供字段"和"显式设为 null"
@@ -57,12 +56,10 @@ fn clean_json_value(value: Value) -> Option<Value> {
     }
 }
 
-/// 清洗并按当前平台的路径组件规则规范化本地路径。
+/// 清洗用户配置路径。原始变量表达式必须保留到实际 I/O 前再解析。
 fn clean_local_path(value: String) -> Option<String> {
     let trimmed = value.trim();
-    let normalized: PathBuf = PathBuf::from(trimmed).components().collect();
-    let normalized = normalized.to_string_lossy().to_string();
-    (!normalized.is_empty()).then_some(normalized)
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 fn clean_option_local_path(value: Option<String>) -> Option<String> {
@@ -118,7 +115,7 @@ impl InsertGameData {
         self.executable = clean_option_executable(self.executable);
         self.launch_type = self.launch_type.trim().to_string();
         self.steam_launch_id = clean_option_string(self.steam_launch_id);
-        self.savepath = clean_option_string(self.savepath);
+        self.savepath = clean_option_local_path(self.savepath);
         self.sources = self
             .sources
             .into_iter()
@@ -139,7 +136,7 @@ impl UpdateGameData {
             .launch_type
             .map(|launch_type| launch_type.trim().to_string());
         self.steam_launch_id = clean_double_option_string(self.steam_launch_id);
-        self.savepath = clean_double_option_string(self.savepath);
+        self.savepath = clean_double_option_local_path(self.savepath);
         self.upsert_sources = self.upsert_sources.map(|sources| {
             sources
                 .into_iter()
@@ -243,11 +240,11 @@ impl UpdateSettingsData {
             .hikarinagi_auth
             .map(|inner| inner.and_then(clean_hikarinagi_auth));
         self.vndb_token = clean_double_option_string(self.vndb_token);
-        self.save_root_path = clean_double_option_string(self.save_root_path);
-        self.db_backup_path = clean_double_option_string(self.db_backup_path);
+        self.save_root_path = clean_double_option_local_path(self.save_root_path);
+        self.db_backup_path = clean_double_option_local_path(self.db_backup_path);
         self.install_root_path = clean_double_option_local_path(self.install_root_path);
-        self.le_path = clean_double_option_string(self.le_path);
-        self.magpie_path = clean_double_option_string(self.magpie_path);
+        self.le_path = clean_double_option_local_path(self.le_path);
+        self.magpie_path = clean_double_option_local_path(self.magpie_path);
         self
     }
 }
@@ -376,7 +373,6 @@ mod tests {
         UpsertGameSourceData, clean_double_option_local_path, clean_json_value, clean_local_path,
     };
     use serde_json::json;
-    use std::path::{MAIN_SEPARATOR, PathBuf};
 
     #[test]
     fn clean_json_value_removes_empty_values_recursively() {
@@ -427,13 +423,10 @@ mod tests {
     }
 
     #[test]
-    fn clean_local_path_removes_trailing_separator() {
-        let path = PathBuf::from("game-root").join("Aster");
-        let input = format!("{}{}", path.display(), MAIN_SEPARATOR);
-
+    fn clean_local_path_only_trims_outer_whitespace() {
         assert_eq!(
-            clean_local_path(input),
-            Some(path.to_string_lossy().to_string())
+            clean_local_path("  %GAME_ROOT%\\Aster\\  ".to_string()),
+            Some("%GAME_ROOT%\\Aster\\".to_string())
         );
     }
 

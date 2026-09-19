@@ -1,5 +1,9 @@
 use std::path::PathBuf;
 
+mod user_path;
+
+pub use user_path::{resolve_user_path, PathResolveError};
+
 /// 数据库相关路径常量
 pub const DB_DATA_DIR: &str = "data";
 pub const DB_FILE_NAME: &str = "reina_manager.db";

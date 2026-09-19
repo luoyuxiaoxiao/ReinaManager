@@ -8,7 +8,6 @@ export type {
 	BackupOptions,
 	BackupResult,
 	ImportResult,
-	MoveBackupFolderResult,
 	SteamLaunchTarget,
 	SteamLaunchTargetScanResult,
 } from "./fileService";
@@ -29,8 +28,15 @@ export {
 	type TaskStatus,
 	taskService,
 } from "./installService";
+export type { RestoreBackupResult } from "./savedataService";
 export { savedataService } from "./savedataService";
-export type { ProxyConfig, UserSettings } from "./settingsService";
+export type {
+	ProxyConfig,
+	SavedataBackupMigrationFailure,
+	SavedataBackupMigrationStatus,
+	SavedataBackupRootMigrationResult,
+	UserSettings,
+} from "./settingsService";
 export { settingsService } from "./settingsService";
 export { statsService } from "./statsService";
 // 导出类型

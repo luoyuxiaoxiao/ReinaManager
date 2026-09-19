@@ -83,6 +83,26 @@ impl ImportPathIndex {
     }
 }
 
+pub(crate) fn resolve_configured_path_set(
+    paths: impl IntoIterator<Item = String>,
+) -> HashSet<String> {
+    paths
+        .into_iter()
+        .filter_map(
+            |configured| match reina_path::resolve_user_path(&configured) {
+                Ok(path) => Some(path.to_string_lossy().into_owned()),
+                Err(error) => {
+                    log::warn!(
+                        "跳过无法解析的已有游戏目录 configured={}, error={error}",
+                        configured
+                    );
+                    None
+                }
+            },
+        )
+        .collect()
+}
+
 fn normalize_import_path(path: &Path) -> Option<Vec<ImportPathComponent>> {
     let mut normalized = Vec::new();
 
@@ -163,6 +183,12 @@ const EXCLUDED_EXE_PATTERNS: &[&str] = &[
     "bugreport",
     "bug_report",
     "unitycrashandler",
+    "注册表",
+    "注冊表",
+    "存档目录",
+    "存檔目錄",
+    "解锁程序",
+    "解鎖程序",
 ];
 
 pub(crate) fn trim_dirname_to_search_name(dir_name: &str) -> String {
@@ -314,10 +340,16 @@ pub async fn scan_directory_for_games(
     path: String,
     max_depth: usize,
     scan_mode: ScanMode,
+    scan_executables: bool,
 ) -> Result<Vec<ScanResult>, String> {
-    // 先做路径预检查（一次 syscall，可在 async 上下文进行）
-    if !Path::new(&path).is_dir() {
-        return Err(format!("目录不存在或不是文件夹: {}", path));
+    let configured_root = path.trim().to_string();
+    let resolved_root = reina_path::resolve_user_path(&configured_root)
+        .map_err(|error| format!("扫描根目录解析失败: {error}"))?;
+    if !resolved_root.is_dir() {
+        return Err(format!(
+            "目录不存在或不是文件夹: {}",
+            resolved_root.display()
+        ));
     }
 
     // 异步查询 DB；去重索引只做路径组件运算，不访问文件系统。
@@ -327,20 +359,29 @@ pub async fn scan_directory_for_games(
 
     let max_depth = max_depth.clamp(MIN_SCAN_MAX_DEPTH, MAX_SCAN_MAX_DEPTH);
     let started_at = Instant::now();
-    let path_for_log = path.clone();
+    let path_for_log = resolved_root.to_string_lossy().into_owned();
+    let resolved_root_for_task = resolved_root.clone();
 
     // WalkDir 大量文件系统 I/O 属于阻塞操作，
     // 放入 Tokio 革层阻塞线程池，避免占用异步运行时线程。
     let results = tokio::task::spawn_blocking(move || {
-        let existing_paths = ImportPathIndex::from_paths(existing_game_directories);
+        let existing_paths =
+            ImportPathIndex::from_paths(resolve_configured_path_set(existing_game_directories));
+        let resolved_path = resolved_root_for_task.to_string_lossy().into_owned();
         log::debug!(
             "开始扫描游戏目录 path={} mode={:?} max_depth={} existing_paths={}",
-            path,
+            resolved_path,
             scan_mode,
             max_depth,
             existing_paths.len()
         );
-        scan_games_blocking(path, existing_paths, max_depth, scan_mode)
+        scan_games_blocking(
+            resolved_path,
+            existing_paths,
+            max_depth,
+            scan_mode,
+            scan_executables,
+        )
     })
     .await
     .map_err(|e| {
@@ -353,6 +394,18 @@ pub async fn scan_directory_for_games(
         );
         format!("扫描任务异常: {}", e)
     })??;
+    let results = results
+        .into_iter()
+        .map(|mut result| {
+            if let Ok(relative) = Path::new(&result.path).strip_prefix(&resolved_root) {
+                result.path = PathBuf::from(&configured_root)
+                    .join(relative)
+                    .to_string_lossy()
+                    .into_owned();
+            }
+            result
+        })
+        .collect::<Vec<_>>();
 
     log::info!(
         "游戏目录扫描完成 mode={:?} max_depth={} result_count={} elapsed_ms={}",
@@ -374,19 +427,28 @@ fn scan_games_blocking(
     existing_paths: ImportPathIndex,
     max_depth: usize,
     scan_mode: ScanMode,
+    scan_executables: bool,
 ) -> Result<Vec<ScanResult>, String> {
     match scan_mode {
         ScanMode::Executable => scan_executable_games_blocking(path, existing_paths, max_depth),
-        ScanMode::FirstLevelDirectory => Ok(scan_direct_child_directories(path, existing_paths)),
+        ScanMode::FirstLevelDirectory => Ok(scan_direct_child_directories(
+            path,
+            existing_paths,
+            scan_executables,
+        )),
     }
 }
 
-fn scan_direct_child_directories(path: String, existing_paths: ImportPathIndex) -> Vec<ScanResult> {
+fn scan_direct_child_directories(
+    path: String,
+    existing_paths: ImportPathIndex,
+    scan_executables: bool,
+) -> Vec<ScanResult> {
     let dir_path = PathBuf::from(path);
     let mut executables_by_dir: HashMap<PathBuf, Vec<String>> = HashMap::new();
     let mut walker = WalkDir::new(&dir_path)
         .min_depth(1)
-        .max_depth(2)
+        .max_depth(if scan_executables { 2 } else { 1 })
         .follow_links(false)
         .into_iter();
 
@@ -586,11 +648,11 @@ fn scan_executable_games_blocking(
 #[cfg(test)]
 mod tests {
     use super::{
-        ImportPathIndex, scan_direct_child_directories, scan_executable_games_blocking,
-        sort_executables, trim_dirname_to_search_name,
+        ImportPathIndex, is_excluded_exe, scan_direct_child_directories,
+        scan_executable_games_blocking, sort_executables, trim_dirname_to_search_name,
     };
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn test_path(parts: &[&str]) -> PathBuf {
@@ -726,8 +788,11 @@ mod tests {
 
         let mut existing_paths = ImportPathIndex::default();
         existing_paths.insert(&game_b);
-        let results =
-            scan_direct_child_directories(root.to_string_lossy().into_owned(), existing_paths);
+        let results = scan_direct_child_directories(
+            root.to_string_lossy().into_owned(),
+            existing_paths,
+            true,
+        );
 
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].name, "GameA");
@@ -738,5 +803,18 @@ mod tests {
         assert!(results[1].executables.is_empty());
 
         fs::remove_dir_all(root).expect("应能清理测试目录");
+    }
+
+    #[test]
+    fn excluded_exe_patterns_filter_unwanted_files() {
+        assert!(is_excluded_exe(Path::new("打开存档目录.bat")));
+        assert!(is_excluded_exe(Path::new("打開存檔目錄.cmd")));
+        assert!(is_excluded_exe(Path::new("注册表导入.exe")));
+        assert!(is_excluded_exe(Path::new("注冊表修復.exe")));
+        assert!(is_excluded_exe(Path::new("全CG解锁程序.exe")));
+        assert!(is_excluded_exe(Path::new("全CG解鎖程序.exe")));
+        assert!(is_excluded_exe(Path::new("unins000.exe")));
+        assert!(!is_excluded_exe(Path::new("Game.exe")));
+        assert!(!is_excluded_exe(Path::new("Start.bat")));
     }
 }

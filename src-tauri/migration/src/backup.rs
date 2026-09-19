@@ -33,9 +33,19 @@ pub async fn backup_sqlite(version: &str) -> Result<PathBuf, DbErr> {
         .as_deref()
         .map(str::trim)
         .filter(|path| !path.is_empty())
-        .map(Path::new);
+        .and_then(|path| match reina_path::resolve_user_path(path) {
+            Ok(path) => Some(path),
+            Err(error) => {
+                log::warn!(
+                    "[MIGRATION] 自定义数据库备份目录解析失败，将回退默认目录。configured={}, error={error}",
+                    path
+                );
+                None
+            }
+        });
 
-    let backup_result = create_backup_with_fallback(&pool, version, custom_dir, &default_dir).await;
+    let backup_result =
+        create_backup_with_fallback(&pool, version, custom_dir.as_deref(), &default_dir).await;
     pool.close().await;
     backup_result
 }

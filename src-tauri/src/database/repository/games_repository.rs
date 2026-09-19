@@ -52,7 +52,15 @@ pub struct GamesRepository;
 impl GamesRepository {
     /// 缺省游戏状态：想玩 / WISH
     const DEFAULT_PLAY_STATUS: i32 = 1;
-    const MIXED_NAME_PRIORITY: [&str; 4] = ["bgm", "vndb", "ymgal", "kun"];
+    const MIXED_BASIC_SOURCE_PRIORITY: [&str; 7] = [
+        "bgm",
+        "vndb",
+        "hikarinagi",
+        "dlsite",
+        "erogamescape",
+        "ymgal",
+        "kun",
+    ];
     const FULL_GAME_SELECT: &str = r#"
         SELECT
             g.id,
@@ -209,10 +217,12 @@ impl GamesRepository {
             return;
         }
 
-        game.date = game
+        let source_data = game
             .sources
             .iter()
-            .find_map(|source| Self::extract_source_date(source.data.as_ref()));
+            .map(|source| (source.source.clone(), source.data.clone()))
+            .collect();
+        game.date = Self::resolve_source_date(&source_data);
     }
 
     fn extract_source_date(data: Option<&Value>) -> Option<String> {
@@ -224,7 +234,7 @@ impl GamesRepository {
     }
 
     fn resolve_source_date(source_data: &HashMap<String, Option<Value>>) -> Option<String> {
-        for source in Self::MIXED_NAME_PRIORITY {
+        for source in Self::MIXED_BASIC_SOURCE_PRIORITY {
             if let Some(date) = source_data
                 .get(source)
                 .and_then(|data| Self::extract_source_date(data.as_ref()))
@@ -235,7 +245,7 @@ impl GamesRepository {
 
         let mut other_sources = source_data
             .keys()
-            .filter(|source| !Self::MIXED_NAME_PRIORITY.contains(&source.as_str()))
+            .filter(|source| !Self::MIXED_BASIC_SOURCE_PRIORITY.contains(&source.as_str()))
             .collect::<Vec<_>>();
         other_sources.sort();
 
@@ -1027,7 +1037,7 @@ impl GamesRepository {
         {
             source_name(&entry.id_type)
         } else {
-            Self::MIXED_NAME_PRIORITY
+            Self::MIXED_BASIC_SOURCE_PRIORITY
                 .iter()
                 .find_map(|source| source_name(source))
         };
@@ -1057,8 +1067,8 @@ impl GamesRepository {
         db: &DatabaseConnection,
         game_id: i32,
         file_name: &str,
-        backup_time: i32,
-        file_size: i32,
+        backup_time: i64,
+        file_size: i64,
     ) -> Result<i32, DbErr> {
         let savedata_record = savedata::ActiveModel {
             id: NotSet,

@@ -14,6 +14,7 @@ import {
 import { type FormEvent, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { parsePlaytimeInput } from "@/utils/dateTime";
+import { getSafeLocale } from "@/utils/locale";
 
 const MAX_DURATION_MINUTES = Math.floor(2_147_483_647 / 60);
 
@@ -30,12 +31,12 @@ export function GameSessionCreateDialog({
 	setOpen,
 	onSubmit,
 }: GameSessionCreateDialogProps) {
-	const { t } = useTranslation();
+	const { i18n, t } = useTranslation();
 	const [startTime, setStartTime] = useState("");
 	const [durationHours, setDurationHours] = useState("");
 	const [durationMinutesPart, setDurationMinutesPart] = useState("");
 	const [submitted, setSubmitted] = useState(false);
-	const locale = t("common.locale", "zh-CN");
+	const locale = getSafeLocale(i18n.resolvedLanguage);
 	const parsedDurationMinutes = parsePlaytimeInput(
 		durationHours,
 		durationMinutesPart,
@@ -128,9 +129,7 @@ export function GameSessionCreateDialog({
 							fullWidth
 						/>
 						<FormControl error={submitted && !validDuration}>
-							<FormLabel>
-								{t("pages.Detail.sessionDuration", "游玩时长")}
-							</FormLabel>
+							<FormLabel>{t("pages.Detail.sessionDuration", "时长")}</FormLabel>
 							<div className="mt-2 flex gap-3">
 								<TextField
 									label={t("pages.Detail.sessionDurationHours", "小时")}

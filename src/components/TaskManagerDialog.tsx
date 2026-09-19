@@ -45,6 +45,7 @@ import {
 import { formatDateLabel, getLocalDateString } from "@/utils/dateTime";
 import { getUserErrorMessage } from "@/utils/errors";
 import { formatFileSize } from "@/utils/fileSize";
+import { getSafeLocale } from "@/utils/locale";
 import { getTaskStateLabel } from "@/utils/task";
 
 interface TaskManagerDialogProps {
@@ -171,9 +172,15 @@ function TaskIconButton({
 }
 
 function TaskProgress({ task }: { task: Task }) {
+	const { t } = useTranslation();
 	const total = task.progress_total;
+	const displayedProgress = task.displayed_progress ?? task.progress_current;
+	const isRecovering =
+		task.status === "running" &&
+		task.stage === "downloading" &&
+		task.recovery_target != null;
 	const progress = total
-		? Math.min(100, Math.max(0, (task.progress_current / total) * 100))
+		? Math.min(100, Math.max(0, (displayedProgress / total) * 100))
 		: 0;
 	const speed =
 		task.status === "running" &&
@@ -181,6 +188,9 @@ function TaskProgress({ task }: { task: Task }) {
 		task.bytes_per_second
 			? ` · ${formatFileSize(task.bytes_per_second)}/s`
 			: "";
+	const transferState = isRecovering
+		? ` · ${t("components.TaskManager.restoringDownload", "正在恢复下载…")}`
+		: speed;
 	const color =
 		task.status === "failed"
 			? "error"
@@ -205,8 +215,8 @@ function TaskProgress({ task }: { task: Task }) {
 			<Stack direction="row" justifyContent="space-between" className="mt-1">
 				<Typography variant="caption" color="text.secondary">
 					{task.progress_unit === "bytes" && total
-						? `${formatFileSize(task.progress_current)} / ${formatFileSize(total)}${speed}`
-						: `${task.progress_current}${total ? ` / ${total}` : ""}${
+						? `${formatFileSize(displayedProgress)} / ${formatFileSize(total)}${transferState}`
+						: `${displayedProgress}${total ? ` / ${total}` : ""}${
 								task.progress_unit ? ` ${task.progress_unit}` : ""
 							}`}
 				</Typography>
@@ -300,7 +310,7 @@ export function TaskManagerDialog({ open, onClose }: TaskManagerDialogProps) {
 	const groups = groupTasksByDate(tasks);
 	const getDateLabel = (date: string) =>
 		formatDateLabel(date, {
-			language: i18n.language,
+			language: getSafeLocale(i18n.resolvedLanguage),
 			todayLabel: t("common.today", "今天"),
 			yesterdayLabel: t("common.yesterday", "昨天"),
 		});
@@ -336,7 +346,7 @@ export function TaskManagerDialog({ open, onClose }: TaskManagerDialogProps) {
 							startIcon={<TelegramIcon />}
 							onClick={handleOpenShionlib}
 						>
-							{t("components.TaskManager.goToShionlib", "去 Shionlib 下载")}
+							{t("components.TaskManager.goToShionlib", "从书音推送")}
 						</Button>
 					</Box>
 				) : (

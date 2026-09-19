@@ -29,8 +29,10 @@ pub async fn create_game_install_task(
     install_root: String,
 ) -> Result<tasks::Model, String> {
     let request = request.validate()?;
-    let install_root = normalize_install_root_path(&install_root)?;
-    let payload = GameInstallTaskPayloadV1::new(request.clone(), &install_root);
+    let configured_install_root = install_root.trim().to_string();
+    let install_root = normalize_install_root_path(&configured_install_root)?;
+    let payload =
+        GameInstallTaskPayloadV1::new(request.clone(), configured_install_root, &install_root);
 
     let dedupe_key = game_install_dedupe_key(&request);
     if find_active_task_by_dedupe(db.inner(), &dedupe_key)
@@ -128,9 +130,11 @@ pub async fn retry_task(
         .ok()
         .flatten()
         .is_some_and(|result| Path::new(&result.install_path).is_dir());
+    // checksum/size 不符说明已下载的数据本身有问题，必须清掉重来；
+    // url_expired 不在其列——数据没问题，换新直链后可以从断点续传。
     let reset_partial_download = matches!(
         task.error_code.as_deref(),
-        Some("checksum_mismatch" | "size_mismatch" | "url_expired")
+        Some("checksum_mismatch" | "size_mismatch")
     );
     if reset_partial_download {
         let partial_path = stored_payload
@@ -143,25 +147,13 @@ pub async fn retry_task(
     let updated_payload = GameInstallTaskPayloadV1 {
         request: request.clone(),
         install_root: stored_payload.install_root.clone(),
+        configured_install_root: stored_payload.configured_install_root.clone(),
     };
-    let previous_download_path = stored_payload
-        .download_path(task_id)
-        .map_err(|failure| failure.message)?;
-    let updated_download_path = updated_payload
-        .download_path(task_id)
-        .map_err(|failure| failure.message)?;
-    if previous_download_path != updated_download_path && previous_download_path.exists() {
-        if updated_download_path.exists() {
-            return Err("新的下载临时文件已存在，请先清理冲突文件".to_string());
-        }
-        tokio::fs::rename(&previous_download_path, &updated_download_path)
-            .await
-            .map_err(|error| format!("迁移下载临时文件失败: {error}"))?;
-    }
+    let payload_json = serde_json::to_value(&updated_payload)
+        .map_err(|error| format!("序列化安装请求失败: {error}"))?;
     let mut active: tasks::ActiveModel = task.into();
     active.title = Set(request.title.clone());
-    active.payload_json = Set(serde_json::to_value(updated_payload)
-        .map_err(|error| format!("序列化安装请求失败: {error}"))?);
+    active.payload_json = Set(payload_json);
     active.status = Set("pending".to_string());
     active.stage = Set(None);
     if !has_installed_files {
@@ -178,10 +170,10 @@ pub async fn retry_task(
     active.started_at = Set(None);
     active.updated_at = Set(chrono::Utc::now().timestamp());
     active.finished_at = Set(None);
-    let task = active
-        .update(db.inner())
-        .await
-        .map_err(|error| format!("重置任务失败: {error}"))?;
+    let task = match active.update(db.inner()).await {
+        Ok(task) => task,
+        Err(error) => return Err(format!("重置任务失败: {error}")),
+    };
 
     spawn_task(app, db.inner().clone(), task.id)?;
     Ok(task)

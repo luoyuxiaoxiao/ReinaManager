@@ -1,8 +1,6 @@
 import { path } from "@tauri-apps/api";
 import { resourceDir } from "@tauri-apps/api/path";
 import { join } from "pathe";
-import { fetchAllSettings } from "@/hooks/queries/useSettings";
-import { queryClient } from "@/providers/queryClient";
 import { fileService } from "@/services/invoke";
 
 let cachedAppDataDir: string | null = null;
@@ -42,41 +40,4 @@ export const getAppDataDirPath = (): string => {
 		);
 	}
 	return cachedAppDataDir;
-};
-
-export const getDbBackupPath = async (): Promise<string> => {
-	try {
-		const settings = await fetchAllSettings(queryClient);
-		const backupDir = settings.db_backup_path ?? "";
-		const backupFinalDir = join(getAppDataDirPath(), "data", "backups");
-		return backupDir ? backupDir : backupFinalDir;
-	} catch (error) {
-		console.error("获取数据库备份路径失败:", error);
-		const backupFinalDir = join(getAppDataDirPath(), "data", "backups");
-		return backupFinalDir;
-	}
-};
-
-export const getSavedataBackupPath = async (
-	gameId: number,
-): Promise<string> => {
-	try {
-		const settings = await fetchAllSettings(queryClient);
-		const savedataBackupPath = settings.save_root_path ?? "";
-		const backupGameDir = join(savedataBackupPath, "backups", `game_${gameId}`);
-		const savedataBackupFinalDir = join(
-			getAppDataDirPath(),
-			"backups",
-			`game_${gameId}`,
-		);
-		return savedataBackupPath ? backupGameDir : savedataBackupFinalDir;
-	} catch (error) {
-		console.error("获取存档备份路径失败:", error);
-		const savedataBackupFinalDir = join(
-			getAppDataDirPath(),
-			"backups",
-			`game_${gameId}`,
-		);
-		return savedataBackupFinalDir;
-	}
 };

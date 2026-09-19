@@ -15,13 +15,13 @@ import {
 	InputAdornment,
 	Link,
 	Stack,
-	TextField,
 	Typography,
 } from "@mui/material";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { PathInput } from "@/components/PathInput";
 import { useAllSettings, useUpdateSettings } from "@/hooks/queries/useSettings";
 import { useTaskCache } from "@/hooks/queries/useTasks";
 import { buildInsertGameData } from "@/metadata/data/metadata";
@@ -236,6 +236,14 @@ export function InstallRequestHandler() {
 					listen<InstallCompletedEvent>("game-install-completed", (event) => {
 						queryClient.invalidateQueries({ queryKey: ["games"] });
 						void invalidateTasks();
+						if (event.payload.used_actual_path) {
+							snackbar.warning(
+								translationRef.current(
+									"components.InstallRequest.completedWithActualPath",
+									"环境变量路径已变化，已使用实际安装路径保存游戏目录",
+								),
+							);
+						}
 						if (event.payload.executable_missing) {
 							snackbar.warning(
 								translationRef.current(
@@ -475,30 +483,29 @@ export function InstallRequestHandler() {
 							)}
 						</Box>
 						<Stack spacing={1} sx={{ pt: 1 }}>
-							<TextField
+							<PathInput
+								pathType="directory"
 								label={t("components.InstallRequest.installPath", "安装路径")}
 								value={installPath}
-								onChange={(e) => setInstallPath(e.target.value)}
+								onChange={setInstallPath}
 								placeholder={t(
 									"components.InstallRequest.installPathPlaceholder",
 									"选择用于安装游戏的目录",
 								)}
 								size="small"
 								fullWidth
-								InputProps={{
-									endAdornment: (
-										<InputAdornment position="end">
-											<IconButton
-												onClick={() => void handleBrowsePath()}
-												edge="end"
-												size="small"
-												title={t("common.browse", "浏览")}
-											>
-												<FolderOpenIcon fontSize="small" />
-											</IconButton>
-										</InputAdornment>
-									),
-								}}
+								endAdornment={
+									<InputAdornment position="end">
+										<IconButton
+											onClick={() => void handleBrowsePath()}
+											edge="end"
+											size="small"
+											title={t("common.browse", "浏览")}
+										>
+											<FolderOpenIcon fontSize="small" />
+										</IconButton>
+									</InputAdornment>
+								}
 							/>
 							<FormControlLabel
 								control={

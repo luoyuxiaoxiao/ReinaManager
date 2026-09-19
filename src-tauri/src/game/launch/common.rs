@@ -3,7 +3,7 @@ use crate::database::repository::games_repository::GamesRepository;
 use log::{info, warn};
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_opener::OpenerExt;
 
@@ -64,6 +64,7 @@ impl StopResult {
 
 pub struct ValidatedSteamLaunch {
     pub steam_launch_id: String,
+    #[cfg(target_os = "windows")]
     pub game_dir: String,
 }
 
@@ -84,16 +85,30 @@ pub fn validate_local_launch(game: &FullGameData) -> Result<ValidatedLocalLaunch
         return Err(format!("不支持的游戏启动方式: {}", game.launch_type));
     }
 
-    let game_dir = PathBuf::from(
-        game.localpath
-            .as_deref()
-            .ok_or_else(|| "游戏目录未设置".to_string())?,
-    );
+    let configured_game_dir = game
+        .localpath
+        .as_deref()
+        .ok_or_else(|| "游戏目录未设置".to_string())?;
+    let game_dir = reina_path::resolve_user_path(configured_game_dir)
+        .map_err(|error| format!("游戏目录解析失败: {error}"))?;
+    if !game_dir.is_dir() {
+        return Err(format!(
+            "游戏目录不存在或不是文件夹: {}",
+            game_dir.display()
+        ));
+    }
     let executable_path = game_dir.join(
         game.executable
             .as_deref()
             .ok_or_else(|| "游戏启动文件未设置".to_string())?,
     );
+
+    if !executable_path.is_file() {
+        return Err(format!(
+            "游戏启动文件不存在或不是文件: {}",
+            executable_path.display()
+        ));
+    }
 
     Ok(ValidatedLocalLaunch {
         game_dir,
@@ -114,13 +129,16 @@ pub fn validate_and_open_steam<R: Runtime>(
         .filter(|value| *value > 0)
         .map(|value| value.to_string())
         .ok_or_else(|| "Steam 启动 ID 无效，请重新关联 Steam 启动项".to_string())?;
-    let game_dir = game_dir
+    let configured_game_dir = game_dir
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "Steam 游戏监控目录未设置，请重新关联 Steam 启动项".to_string())?;
-    if !Path::new(game_dir).is_dir() {
+    let game_dir = reina_path::resolve_user_path(configured_game_dir)
+        .map_err(|error| format!("Steam 游戏监控目录解析失败: {error}"))?;
+    if !game_dir.is_dir() {
         return Err(format!(
-            "Steam 游戏监控目录不存在，请重新关联 Steam 启动项: {game_dir}"
+            "Steam 游戏监控目录不存在，请重新关联 Steam 启动项: {}",
+            game_dir.display()
         ));
     }
 
@@ -136,12 +154,15 @@ pub fn validate_and_open_steam<R: Runtime>(
 
     info!(
         "已请求 Steam 启动游戏 game_id={} steam_launch_id={} detection_dir={}",
-        game_id, steam_launch_id, game_dir
+        game_id,
+        steam_launch_id,
+        game_dir.display()
     );
 
     Ok(ValidatedSteamLaunch {
         steam_launch_id,
-        game_dir: game_dir.to_string(),
+        #[cfg(target_os = "windows")]
+        game_dir: game_dir.to_string_lossy().into_owned(),
     })
 }
 

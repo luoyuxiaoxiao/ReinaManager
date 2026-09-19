@@ -15,8 +15,6 @@ import {
 	useQuery,
 	useQueryClient,
 } from "@tanstack/react-query";
-import { join } from "pathe";
-import { getSavedataBackupPath } from "@/services/fs/pathCache";
 import { createGameSavedataBackup } from "@/services/fs/savedataBackup";
 import { savedataService } from "@/services/invoke";
 import type { SavedataRecord } from "@/types";
@@ -42,7 +40,6 @@ interface DeleteBackupParams {
 }
 
 interface RestoreBackupParams {
-	gameId: number;
 	backup: SavedataRecord;
 	savePath: string;
 }
@@ -139,13 +136,9 @@ function useDeleteBackup() {
  */
 function useRestoreBackup() {
 	return useMutation({
-		mutationFn: async ({ gameId, backup, savePath }: RestoreBackupParams) => {
-			// 获取备份文件完整路径
-			const savedataBackupPath = await getSavedataBackupPath(gameId);
-			const backupFilePath = join(savedataBackupPath, backup.file);
-
-			// 恢复备份
-			await savedataService.restoreBackup(backupFilePath, savePath);
+		mutationFn: async ({ backup, savePath }: RestoreBackupParams) => {
+			// 恢复备份，并将后端确定的实际恢复路径返回给页面
+			return savedataService.restoreBackup(backup.id, savePath);
 		},
 	});
 }

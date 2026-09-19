@@ -63,7 +63,8 @@ pub(crate) async fn prepare_game_import(
     .map_err(|error| TaskFailure::new("scan_task_failed", error.to_string()))?
     .map_err(|message| TaskFailure::new("scan_failed", message))?;
     let executable = (candidates.len() == 1).then(|| candidates[0].as_str());
-    result = GameInstallResultV1::partial(&install_path, executable);
+    result =
+        GameInstallResultV1::partial(&install_path, result.configured_install_path, executable);
     save_game_install_result(db, task.id, &result).await?;
 
     check_task_control(control)?;
@@ -103,7 +104,7 @@ pub(crate) async fn import_installed_game(
         ));
     }
     let request = parse_game_install_payload(&task)?.request;
-    let partial = parse_game_install_result(&task)?.ok_or_else(|| {
+    let mut partial = parse_game_install_result(&task)?.ok_or_else(|| {
         TaskFailure::new("install_result_missing", "安装任务缺少已整理的游戏目录")
     })?;
     let install_path = PathBuf::from(&partial.install_path);
@@ -114,6 +115,8 @@ pub(crate) async fn import_installed_game(
         ));
     }
     let executable_name = resolve_installed_executable_name(&install_path, &partial)?;
+    let (configured_install_path, used_actual_path) = validated_configured_install_path(&partial);
+    partial.configured_install_path = Some(configured_install_path.clone());
     let task = claim_game_import(db, task_id).await?;
     emit_progress(
         app,
@@ -185,7 +188,7 @@ pub(crate) async fn import_installed_game(
                 &metadata.id_type,
             )),
             date: Some(metadata.date.clone()),
-            localpath: Some(Some(partial.install_path.clone())),
+            localpath: Some(Some(configured_install_path.clone())),
             executable: Some(executable_name.clone()),
             upsert_sources: Some(metadata.sources.clone()),
             ..Default::default()
@@ -196,7 +199,7 @@ pub(crate) async fn import_installed_game(
             .map_err(|error| TaskFailure::new("game_import_failed", error.to_string()))?;
         (game.id, false, matched_by)
     } else {
-        metadata.localpath = Some(partial.install_path.clone());
+        metadata.localpath = Some(configured_install_path.clone());
         metadata.executable = executable_name.clone();
         let game = GamesRepository::insert_aggregate(&transaction, metadata.cleaned(), now)
             .await
@@ -208,6 +211,7 @@ pub(crate) async fn import_installed_game(
         version: 1,
         game_id: Some(game_id),
         install_path: partial.install_path.clone(),
+        configured_install_path: Some(configured_install_path),
         executable: executable_name.clone(),
         created_new_game: Some(created_new_game),
         matched_by,
@@ -228,6 +232,7 @@ pub(crate) async fn import_installed_game(
             result_path: completed_result.install_path,
             executable_missing: completed_result.executable.is_none(),
             executable: completed_result.executable,
+            used_actual_path,
         },
     );
     Ok(completed)
@@ -240,19 +245,62 @@ pub(crate) fn parse_game_install_payload(
         .map_err(|error| TaskFailure::new("invalid_payload", error.to_string()))?;
     match payload.request.v {
         1 => {
-            payload.install_root()?;
+            let install_root = payload.install_root()?.to_string_lossy().into_owned();
             Ok(GameInstallTaskPayloadV1 {
                 request: payload
                     .request
                     .validate()
                     .map_err(|message| TaskFailure::new("invalid_payload", message))?,
-                install_root: payload.install_root,
+                install_root,
+                configured_install_root: payload.configured_install_root,
             })
         }
         version => Err(TaskFailure::new(
             "unsupported_payload_version",
             format!("不支持的游戏安装载荷版本: {version}"),
         )),
+    }
+}
+
+fn validated_configured_install_path(result: &GameInstallResultV1) -> (String, bool) {
+    let actual_path = PathBuf::from(&result.install_path);
+    let Some(configured_path) = result.configured_install_path.as_deref() else {
+        return (result.install_path.clone(), false);
+    };
+
+    match reina_path::resolve_user_path(configured_path) {
+        Ok(resolved_path) if same_install_path(&resolved_path, &actual_path) => {
+            (configured_path.to_string(), false)
+        }
+        Ok(resolved_path) => {
+            log::warn!(
+                "安装结果配置路径与实际路径不一致，改用实际绝对路径: configured={} resolved={} actual={}",
+                configured_path,
+                resolved_path.display(),
+                actual_path.display()
+            );
+            (result.install_path.clone(), true)
+        }
+        Err(error) => {
+            log::warn!(
+                "安装结果配置路径当前无法解析，改用实际绝对路径: configured={} actual={} error={error}",
+                configured_path,
+                actual_path.display()
+            );
+            (result.install_path.clone(), true)
+        }
+    }
+}
+
+fn same_install_path(left: &Path, right: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        left.to_string_lossy()
+            .eq_ignore_ascii_case(&right.to_string_lossy())
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
     }
 }
 
@@ -353,6 +401,7 @@ mod tests {
             version: 1,
             game_id: None,
             install_path: "C:\\Games\\Reina".to_string(),
+            configured_install_path: None,
             executable: Some("bin/game.exe".to_string()),
             created_new_game: None,
             matched_by: None,

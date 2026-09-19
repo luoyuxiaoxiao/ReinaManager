@@ -12,12 +12,15 @@ import {
 	DialogContent,
 	DialogTitle,
 	FormControl,
+	FormControlLabel,
 	IconButton,
+	InputAdornment,
 	InputLabel,
 	MenuItem,
 	Popover,
 	Select,
 	Stack,
+	Switch,
 	TextField,
 	Typography,
 } from "@mui/material";
@@ -25,6 +28,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { AlertBox } from "@/components/AlertBox";
+import { PathInput } from "@/components/PathInput";
 import { useBulkGameAddActions } from "@/hooks/features/games/useGameMetadataFacade";
 import { useMetadataSearchFlow } from "@/hooks/features/games/useMetadataSearchFlow";
 import { useAllSettings } from "@/hooks/queries/useSettings";
@@ -80,6 +84,8 @@ interface BulkImportTabProps {
 	onScanModeChange: (mode: GameScanMode) => void;
 	scanMaxDepth: number;
 	onScanMaxDepthChange: (depth: number) => void;
+	scanFirstLevelExecutables: boolean;
+	onScanFirstLevelExecutablesChange: (checked: boolean) => void;
 	dropBatch?: BulkDropBatch;
 	onDropBatchHandled: (batchId: number) => void;
 }
@@ -119,6 +125,8 @@ const BulkImportTab = ({
 	onScanModeChange,
 	scanMaxDepth,
 	onScanMaxDepthChange,
+	scanFirstLevelExecutables,
+	onScanFirstLevelExecutablesChange,
 	dropBatch,
 	onDropBatchHandled,
 }: BulkImportTabProps) => {
@@ -246,6 +254,7 @@ const BulkImportTab = ({
 			selectedRootPath: string,
 			maxDepth: number,
 			mode: GameDirectoryScanMode,
+			scanExecutables: boolean,
 		) => {
 			setIsScanningGames(true);
 			try {
@@ -253,6 +262,7 @@ const BulkImportTab = ({
 					selectedRootPath,
 					maxDepth,
 					mode,
+					scanExecutables,
 				);
 				setItems(
 					subdirs.map((dir) => ({
@@ -418,23 +428,39 @@ const BulkImportTab = ({
 
 		setRootPath(result);
 		setHasScanned(false);
-		await scanSelectedFolder(result, scanMaxDepth, scanMode);
+		await scanSelectedFolder(
+			result,
+			scanMaxDepth,
+			scanMode,
+			scanFirstLevelExecutables,
+		);
 	};
 
 	const handleScanDepthChange = (nextDepth: number) => {
 		onScanMaxDepthChange(nextDepth);
 		if (rootPath && scanMode === "executable") {
-			void scanSelectedFolder(rootPath, nextDepth, scanMode);
+			void scanSelectedFolder(rootPath, nextDepth, scanMode, false);
 		}
 	};
 
 	const handleScanModeChange = (nextMode: GameScanMode) => {
 		onScanModeChange(nextMode);
-		setSettingsAnchorEl(null);
 		setHasScanned(false);
 		setItems([]);
 		if (nextMode !== "steam" && rootPath) {
-			void scanSelectedFolder(rootPath, scanMaxDepth, nextMode);
+			void scanSelectedFolder(
+				rootPath,
+				scanMaxDepth,
+				nextMode,
+				scanFirstLevelExecutables,
+			);
+		}
+	};
+
+	const handleScanFirstLevelExecutablesChange = (checked: boolean) => {
+		onScanFirstLevelExecutablesChange(checked);
+		if (rootPath && scanMode === "first_level_directory") {
+			void scanSelectedFolder(rootPath, scanMaxDepth, scanMode, checked);
 		}
 	};
 
@@ -770,36 +796,47 @@ const BulkImportTab = ({
 							</Box>
 						) : (
 							<>
+								<PathInput
+									pathType="directory"
+									value={rootPath}
+									onChange={(value) => {
+										setRootPath(value);
+										setHasScanned(false);
+									}}
+									placeholder={t(
+										"components.BulkImportModal.noFolderSelected",
+										"选择或输入扫描根目录",
+									)}
+									disabled={loading}
+									size="small"
+									className="flex-[1_1_280px] min-w-0"
+									endAdornment={
+										<InputAdornment position="end">
+											<IconButton
+												onClick={() => void scanFolder()}
+												disabled={loading}
+												edge="end"
+												size="small"
+											>
+												<FolderOpenIcon />
+											</IconButton>
+										</InputAdornment>
+									}
+								/>
 								<Button
 									variant="contained"
-									startIcon={
-										isScanningGames ? (
-											<CircularProgress size={20} color="inherit" />
-										) : (
-											<FolderOpenIcon />
+									onClick={() =>
+										void scanSelectedFolder(
+											rootPath,
+											scanMaxDepth,
+											scanMode,
+											scanFirstLevelExecutables,
 										)
 									}
-									onClick={scanFolder}
-									disabled={loading}
-									className="shrink-0"
+									disabled={loading || !rootPath.trim()}
 								>
-									{t(
-										"components.BulkImportModal.selectRootFolder",
-										"选择根文件夹",
-									)}
+									{t("components.BulkImportModal.startScan", "开始扫描")}
 								</Button>
-								<Typography
-									variant="body2"
-									className="flex-[1_1_160px] min-w-0"
-									color={rootPath ? "text.primary" : "text.secondary"}
-									noWrap
-								>
-									{rootPath ||
-										t(
-											"components.BulkImportModal.noFolderSelected",
-											"未选择文件夹",
-										)}
-								</Typography>
 							</>
 						)}
 
@@ -874,7 +911,7 @@ const BulkImportTab = ({
 							horizontal: "right",
 						}}
 					>
-						<Stack spacing={2} sx={{ p: 2.5, minWidth: 260 }}>
+						<Stack spacing={1.5} sx={{ p: 2.5, minWidth: 260 }}>
 							<FormControl size="small" disabled={loading} fullWidth>
 								<InputLabel id="bulk-import-scan-mode-label">
 									{t("components.BulkImportModal.scanMode", "扫描模式")}
@@ -934,6 +971,27 @@ const BulkImportTab = ({
 										))}
 									</Select>
 								</FormControl>
+							)}
+							{scanMode === "first_level_directory" && (
+								<FormControlLabel
+									labelPlacement="start"
+									className="box-border w-full justify-between pl-3"
+									control={
+										<Switch
+											checked={scanFirstLevelExecutables}
+											onChange={(event) =>
+												handleScanFirstLevelExecutablesChange(
+													event.target.checked,
+												)
+											}
+											disabled={loading}
+										/>
+									}
+									label={t(
+										"components.BulkImportModal.scanFirstLevelExecutables",
+										"扫描启动文件",
+									)}
+								/>
 							)}
 						</Stack>
 					</Popover>
@@ -1133,7 +1191,7 @@ const BulkImportTab = ({
 				)}
 				message={t(
 					"components.BulkImportModal.importAsCustomConfirmMessage",
-					"将把已匹配以外的 {{count}} 个项目作为自定义游戏导入，仅保存名称和本地路径，不包含元数据。是否继续？",
+					"将把已匹配以外的 {{count}} 个项目作为自定义游戏导入，仅保存名称和启动信息，不包含元数据。是否继续？",
 					{ count: customImportCount },
 				)}
 				onConfirm={handleImportCustom}

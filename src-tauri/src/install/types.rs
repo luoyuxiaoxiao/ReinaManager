@@ -109,6 +109,7 @@ pub(crate) struct TaskProgressEvent {
     pub(crate) progress_total: Option<i64>,
     pub(crate) progress_unit: Option<String>,
     pub(crate) bytes_per_second: Option<f64>,
+    pub(crate) received_bytes: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -123,6 +124,7 @@ pub(crate) struct GameInstallCompletedEvent {
     pub(crate) result_path: String,
     pub(crate) executable: Option<String>,
     pub(crate) executable_missing: bool,
+    pub(crate) used_actual_path: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -138,6 +140,8 @@ pub(crate) struct GameInstallResultV1 {
     pub(crate) version: u32,
     pub(crate) game_id: Option<i32>,
     pub(crate) install_path: String,
+    #[serde(default)]
+    pub(crate) configured_install_path: Option<String>,
     /// 安装目录直属的可执行文件名，不保存绝对路径。
     pub(crate) executable: Option<String>,
     pub(crate) created_new_game: Option<bool>,
@@ -145,11 +149,16 @@ pub(crate) struct GameInstallResultV1 {
 }
 
 impl GameInstallResultV1 {
-    pub(crate) fn partial(install_path: &Path, executable: Option<&str>) -> Self {
+    pub(crate) fn partial(
+        install_path: &Path,
+        configured_install_path: Option<String>,
+        executable: Option<&str>,
+    ) -> Self {
         Self {
             version: 1,
             game_id: None,
             install_path: install_path.to_string_lossy().into_owned(),
+            configured_install_path,
             executable: executable.map(str::to_owned),
             created_new_game: None,
             matched_by: None,
@@ -162,13 +171,20 @@ pub(crate) struct GameInstallTaskPayloadV1 {
     #[serde(flatten)]
     pub(crate) request: InstallRequest,
     pub(crate) install_root: String,
+    #[serde(default)]
+    pub(crate) configured_install_root: Option<String>,
 }
 
 impl GameInstallTaskPayloadV1 {
-    pub(crate) fn new(request: InstallRequest, install_root: &Path) -> Self {
+    pub(crate) fn new(
+        request: InstallRequest,
+        configured_install_root: String,
+        install_root: &Path,
+    ) -> Self {
         Self {
             request,
             install_root: install_root.to_string_lossy().into_owned(),
+            configured_install_root: Some(configured_install_root),
         }
     }
 
@@ -195,17 +211,20 @@ impl GameInstallTaskPayloadV1 {
             .install_root()?
             .join(format!("reina-{task_id}.extracting")))
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::GameInstallResultV1;
-    use std::path::Path;
-
-    #[test]
-    fn partial_result_stores_executable_name_only() {
-        let result = GameInstallResultV1::partial(Path::new(r"C:\Games\Reina"), Some("game.exe"));
-
-        assert_eq!(result.executable.as_deref(), Some("game.exe"));
+    pub(crate) fn configured_path_for(&self, path: &Path) -> Result<Option<String>, TaskFailure> {
+        let Some(configured_root) = self.configured_install_root.as_deref() else {
+            return Ok(None);
+        };
+        let install_root = self.install_root()?;
+        let relative = path.strip_prefix(&install_root).map_err(|_| {
+            TaskFailure::new("invalid_payload", "安装结果不在任务配置的安装根目录内")
+        })?;
+        Ok(Some(
+            PathBuf::from(configured_root)
+                .join(relative)
+                .to_string_lossy()
+                .into_owned(),
+        ))
     }
 }

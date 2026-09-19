@@ -156,7 +156,23 @@ fn resolve_paths_blocking(
     existing_directories: HashSet<String>,
     existing_steam_ids: HashSet<String>,
 ) -> BulkImportPathResult {
-    let path_bufs = paths.into_iter().map(PathBuf::from).collect::<Vec<_>>();
+    let mut issues = Vec::new();
+    let path_bufs = paths
+        .into_iter()
+        .filter_map(
+            |configured| match reina_path::resolve_user_path(&configured) {
+                Ok(path) => Some(path),
+                Err(error) => {
+                    issues.push(issue(
+                        Path::new(&configured),
+                        BulkImportPathIssueCode::ReadFailed,
+                        format!("路径解析失败：{error}"),
+                    ));
+                    None
+                }
+            },
+        )
+        .collect::<Vec<_>>();
     let shortcut_paths = path_bufs
         .iter()
         .filter(|path| {
@@ -170,7 +186,6 @@ fn resolve_paths_blocking(
     let mut seen_paths = HashSet::new();
     let mut seen_steam_ids = HashSet::new();
     let mut candidates = Vec::new();
-    let mut issues = Vec::new();
 
     for path in path_bufs {
         let is_shortcut = path
@@ -273,7 +288,11 @@ pub async fn resolve_bulk_import_paths(
         .map_err(|error| format!("查询已有 Steam 启动 ID 失败: {error}"))?;
 
     tokio::task::spawn_blocking(move || {
-        resolve_paths_blocking(paths, existing_directories, existing_steam_ids)
+        resolve_paths_blocking(
+            paths,
+            crate::game::scan::resolve_configured_path_set(existing_directories),
+            existing_steam_ids,
+        )
     })
     .await
     .map_err(|error| format!("批量解析拖拽路径任务异常: {error}"))

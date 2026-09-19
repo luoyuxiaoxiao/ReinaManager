@@ -14,6 +14,7 @@ interface UseSteamAssociationOptions {
 	selectedGame: GameData;
 	gameName: string;
 	localPath: string;
+	comparisonLocalPath: string;
 	executable: string;
 	onLocalPathChange: (path: string) => void;
 	onExecutableChange: (executable: string) => void;
@@ -29,6 +30,7 @@ export function useSteamAssociation({
 	selectedGame,
 	gameName,
 	localPath,
+	comparisonLocalPath,
 	executable,
 	onLocalPathChange,
 	onExecutableChange,
@@ -141,7 +143,7 @@ export function useSteamAssociation({
 
 			setScanResult(result);
 			const pathMatches = result.targets.filter((target) =>
-				isSteamTargetPathMatch(target, localPath),
+				isSteamTargetPathMatch(target, comparisonLocalPath),
 			);
 			if (pathMatches.length === 1) {
 				confirmAssociation(pathMatches[0]);
@@ -165,7 +167,7 @@ export function useSteamAssociation({
 				setScanning(false);
 			}
 		}
-	}, [confirmAssociation, localPath, openAssociation, scanResult, t]);
+	}, [comparisonLocalPath, confirmAssociation, openAssociation, scanResult, t]);
 
 	const handleLaunchTypeChange = useCallback(
 		(nextLaunchType: GameLaunchType | null) => {
