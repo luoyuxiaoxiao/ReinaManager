@@ -569,6 +569,7 @@ export const PathSettingsModal: React.FC<PathSettingsModalProps> = ({
 
 					{!isLinux && (
 						// LE转区软件路径设置（Windows 专属，Linux 隐藏）
+						<>
 						<Box>
 							<InputLabel className="font-semibold mb-4">
 								{t(
@@ -624,10 +625,11 @@ export const PathSettingsModal: React.FC<PathSettingsModalProps> = ({
 								}
 							/>
 						</Box>
-					)}
+						</>
 
 					{!isLinux && (
 						// Magpie软件路径设置（Windows 专属，Linux 隐藏）
+						<>
 						<Box>
 							<InputLabel className="font-semibold mb-4">
 								{t(
@@ -683,6 +685,8 @@ export const PathSettingsModal: React.FC<PathSettingsModalProps> = ({
 								}
 							/>
 						</Box>
+						</>
+					)}
 					</Box>
 				</DialogContent>
 				<DialogActions>
