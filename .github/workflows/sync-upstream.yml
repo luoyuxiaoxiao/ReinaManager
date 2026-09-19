@@ -1,0 +1,38 @@
+name: Sync Upstream
+
+# 定时把 huoshen80/ReinaManager 的 main 合并到本 fork（merge 而非 reset，
+# fork 自有文件如 arch-package.yml 不会被上游覆盖丢失）。
+# main push 后 arch-package.yml 自动构建并发布 v<VER>-arch 滚动包——
+# 即，每次上游发版自动跟随出新版 Arch 包。
+# 同步冲突时 job 失败并保留现场，需人工手动 merge 后 push。
+on:
+  schedule:
+    - cron: "23 3 * * *" # 每天 03:23 UTC，避开整点高峰
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Merge upstream main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_PAT }}
+
+      - name: Merge upstream main
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/huoshen80/ReinaManager.git 2>/dev/null || true
+          git fetch upstream --tags
+          git checkout main
+          # 快进则快进，否则 merge（保留 fork 自有改动）；冲突即失败，人工处理。
+          git merge --no-edit upstream/main || {
+            echo "CONFLICT: upstream 与 fork 改动冲突，需人工手动 merge 后 push。"
+            git status --short
+            exit 1
+          }
+          git push origin main
