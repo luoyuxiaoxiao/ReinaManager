@@ -29,6 +29,9 @@ jobs:
           git remote add upstream https://github.com/huoshen80/ReinaManager.git 2>/dev/null || true
           git fetch upstream --tags
           git checkout main
+          # merge commit 需要身份；checkout 不自带，需显式设置，否则非快进合并直接失败。
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # 快进则快进，否则 merge（保留 fork 自有改动）；冲突即失败，人工处理。
           git merge --no-edit upstream/main || {
             echo "CONFLICT: upstream 与 fork 改动冲突，需人工手动 merge 后 push。"
