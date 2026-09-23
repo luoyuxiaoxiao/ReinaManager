@@ -1,13 +1,12 @@
 name: Sync Upstream
 
-# 定时把 huoshen80/ReinaManager 的 main 合并到本 fork（merge 而非 reset，
+# 手动把 huoshen80/ReinaManager 的 main 合并到本 fork（merge 而非 reset，
 # fork 自有文件如 arch-package.yml 不会被上游覆盖丢失）。
 # main push 后 arch-package.yml 自动构建并发布 v<VER>-arch 滚动包——
 # 即，每次上游发版自动跟随出新版 Arch 包。
+# 2026-09-23 起取消定时同步（上游更新快、每次合都要修），改手动触发。
 # 同步冲突时 job 失败并保留现场，需人工手动 merge 后 push。
 on:
-  schedule:
-    - cron: "23 3 * * *" # 每天 03:23 UTC，避开整点高峰
   workflow_dispatch:
 
 permissions:

@@ -5,7 +5,9 @@
 
 export { collectionService } from "./collectionService";
 export type {
-	BackupOptions,
+	AutoBackupRequest,
+	AutoBackupResult,
+	AutoBackupTrigger,
 	BackupResult,
 	ImportResult,
 	SteamLaunchTarget,
@@ -28,7 +30,11 @@ export {
 	type TaskStatus,
 	taskService,
 } from "./installService";
-export type { RestoreBackupResult } from "./savedataService";
+export type {
+	RestoreBackupResult,
+	SavedataBackupDeleteResult,
+	SavedataBackupDeleteStatus,
+} from "./savedataService";
 export { savedataService } from "./savedataService";
 export type {
 	ProxyConfig,

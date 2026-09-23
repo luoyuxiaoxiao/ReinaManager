@@ -21,6 +21,9 @@ mod m20260801_000017_add_tasks;
 mod m20260805_000018_hikarinagi_oauth;
 mod m20260809_000019_add_steam_launch;
 mod m20260817_000020_add_proton_profile;
+// 上游 v0.30.0 同期新增了同编号 000020 的迁移；已落库的 fork 用户按名称记录已执行迁移，
+// 改名会导致重跑，故保留本 fork 的 000020，把上游的顺延为 000021（内容相互独立）。
+mod m20260922_000021_savedata_backup_root_semantics;
 
 pub struct Migrator;
 
@@ -48,6 +51,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260805_000018_hikarinagi_oauth::Migration),
             Box::new(m20260809_000019_add_steam_launch::Migration),
             Box::new(m20260817_000020_add_proton_profile::Migration),
+            Box::new(m20260922_000021_savedata_backup_root_semantics::Migration),
         ]
     }
 }
